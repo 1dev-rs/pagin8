@@ -39,7 +39,6 @@ jobs:
             VERSION="${RAW_VERSION#v}"  # strips leading 'v'
             echo "Packing version $VERSION"
             dotnet pack --configuration Release /p:PackageVersion=$VERSION --output ./nupkgs
-
       working-directory: src
 
     - name: Push to NuGet
