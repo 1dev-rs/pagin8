@@ -5,7 +5,6 @@ using System.Text;
 using AspNet.Transliterator;
 using InterpolatedSql.SqlBuilders;
 using _1Dev.Pagin8.Extensions;
-using _1Dev.Pagin8.Internal.Configuration;
 using _1Dev.Pagin8.Internal.DateProcessor;
 using _1Dev.Pagin8.Internal.Exceptions.Base;
 using _1Dev.Pagin8.Internal.Exceptions.StatusCodes;
@@ -16,6 +15,7 @@ using _1Dev.Pagin8.Internal.Tokenizer.Operators;
 using _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 using _1Dev.Pagin8.Internal.Tokenizer.Tokens.Sort;
 using _1Dev.Pagin8.Internal.Validators;
+using Pagin8.Internal.Configuration;
 using QueryBuilder = InterpolatedSql.Dapper.SqlBuilders.QueryBuilder;
 
 namespace _1Dev.Pagin8.Internal.Visitors;
@@ -46,7 +46,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         if (groupToken.IsNegated)
         {
-            builder.AppendFormattableString($"{ConfigurationProvider.Config.Negation:raw} ");
+            builder.AppendFormattableString($"{EngineDefaults.Config.Negation:raw} ");
         }
 
         builder.AppendFormattableString($"(");
@@ -102,7 +102,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     public QueryBuilderResult Visit<T>(SelectToken token, QueryBuilderResult result) where T : class
     {
-        if (result.Builder == null) return result; // Skip select for count only
+        if (result.ShouldSkipBuilder) return result; // Skip select for count only
 
         var requestedFields = !token.Fields.Contains(QueryConstants.SelectAsterisk) ?
             token.Fields.ToList() :
@@ -206,7 +206,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var (procType, innerType) = DetermineProcessingType(typeof(T), token.JsonPath);
         var columnInfo = GetColumnInfo(innerType, token.Field);
         var typeCode = GetTypeCodeForProperty(innerType, token.Field);
-        var negation = token.IsNegated ? ConfigurationProvider.Config.Negation : "";
+        var negation = token.IsNegated ? EngineDefaults.Config.Negation : "";
 
         result.Builder.Append($"(");
 
@@ -331,7 +331,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         }
     }
 
-    private string GetLeftHandSideExpression(ProcessingType procType, string column, string jsonPath, TypeCode typeCode)
+    private string GetLeftHandSideExpression(ProcessingType procType, string column, string? jsonPath, TypeCode typeCode)
     {
         return procType switch
         {
@@ -582,7 +582,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         };
     }
 
-    private dynamic FormatColumnValue<T>(string field, string value) where T : class
+    private dynamic? FormatColumnValue<T>(string field, string? value) where T : class
     {
         var typeCode = GetTypeCodeForProperty<T>(field);
 
@@ -726,10 +726,14 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var method = GetType().GetMethod("Visit", BindingFlags.Public | BindingFlags.Instance, null, [token.GetType(), typeof(QueryBuilderResult)], null) ?? throw new InvalidOperationException("Visit method not found.");
         var genericMethod = method.MakeGenericMethod(type);
 
-        _ = (QueryBuilderResult)genericMethod.Invoke(this, [token, result]);
+        var invokeResult = genericMethod.Invoke(this, [token, result]);
+        if (invokeResult is not QueryBuilderResult)
+        {
+            throw new InvalidOperationException("The invoked Visit method returned null or an unexpected type.");
+        }
     }
 
-    private (ProcessingType, Type) DetermineProcessingType(Type type, string jsonPath)
+    private static (ProcessingType, Type) DetermineProcessingType(Type type, string? jsonPath)
     {
         var isJson = !string.IsNullOrEmpty(jsonPath);
         var isJsonArray = isJson && typeof(IEnumerable).IsAssignableFrom(type) && type != typeof(string);

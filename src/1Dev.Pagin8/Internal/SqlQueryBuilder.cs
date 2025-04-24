@@ -1,11 +1,11 @@
 ﻿using InterpolatedSql.Dapper;
 using InterpolatedSql.Dapper.SqlBuilders;
 using _1Dev.Pagin8.Input;
-using _1Dev.Pagin8.Internal.Configuration;
 using _1Dev.Pagin8.Internal.Tokenizer;
 using _1Dev.Pagin8.Internal.Tokenizer.Contracts;
 using _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 using _1Dev.Pagin8.Internal.Tokenizer.Tokens.Sort;
+using Pagin8.Internal.Configuration;
 // ReSharper disable InterpolatedStringExpressionIsNotIFormattable
 
 namespace _1Dev.Pagin8.Internal;
@@ -62,7 +62,7 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
 
     private static void WrapQueryAsJsonIfNeeded(QueryInputParameters input, QueryBuilderResult result)
     {
-        if (input.IsJson && result.Builder != null)
+        if (input.IsJson)
         {
             result.Builder = BuildJsonWrapper(result.Builder, input.CtePrefix, input.IsCount);
         }
@@ -75,7 +75,7 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
             .OfType<PagingToken>()
             .FirstOrDefault();
 
-        if (tokenizationResponse.IsCountOnly && pagingToken != null)
+        if (tokenizationResponse.IsCountOnly && pagingToken is not null)
         {
             ProcessCountToken<T>(pagingToken.Count, result);
         }
@@ -86,14 +86,15 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
     {
         if (tokenizationResponse.IsMetaOnly)
         {
-            result.Builder = null; // Skip fetching data
+            result.ShouldSkipBuilder = true; // Skip fetching data
         }
     }
 
-    private void ProcessCountToken<T>(ShowCountToken showCount, QueryBuilderResult result) where T : class
+    private void ProcessCountToken<T>(ShowCountToken? showCount, QueryBuilderResult result) where T : class
     {
+        if(showCount is null) return;
         result = tokenVisitor.Visit<T>(showCount, result);
-        result.Builder = null; // Skip fetching data
+        result.ShouldSkipBuilder = true; // Skip fetching data
     }
 
     private void BuildQueryFromTokens<T>(QueryBuilderResult result, IEnumerable<Token> tokens, bool isCount)
@@ -106,7 +107,7 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
         {
             if (!SkipJoinKeyword(token))
             {
-                result.Builder += $"{ConfigurationProvider.Config.QueryJoinKeyword:raw}";
+                result.Builder += $"{EngineDefaults.Config.QueryJoinKeyword:raw}";
             }
 
             if (SkipForCount(token, isCount)) continue;

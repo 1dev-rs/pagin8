@@ -1,7 +1,7 @@
 ﻿using System.Text;
-using _1Dev.Pagin8.Internal.Configuration;
 using _1Dev.Pagin8.Internal.Tokenizer.Contracts;
 using _1Dev.Pagin8.Internal.Tokenizer.Operators;
+using Pagin8.Internal.Configuration;
 
 namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
@@ -30,7 +30,7 @@ public class ComparisonToken : FilterToken, INegationAware
 
         if (IsNegated)
         {
-            var negation = ConfigurationProvider.Config.Negation;
+            var negation = EngineDefaults.Config.Negation;
             sb.Append($"{negation}.");
         }
 

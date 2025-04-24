@@ -5,5 +5,5 @@ public record ServiceConfiguration
 
     public int MaxNestingLevel { get; set; }
 
-    public PagingSettings PagingSettings{ get; set; }
+    public PagingSettings PagingSettings { get; set; } = new();
 }

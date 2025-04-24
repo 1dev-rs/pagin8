@@ -4,7 +4,7 @@ using _1Dev.Pagin8.Internal.Tokenizer;
 
 namespace _1Dev.Pagin8.Test;
 
-public class DslConverterIntegrationTests
+public class DslConverterIntegrationTests : Pagin8TestBase
 {
     private readonly Tokenizer _tokenizer = new();
 

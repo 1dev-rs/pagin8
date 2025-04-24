@@ -29,7 +29,7 @@ internal static class TypeExtensions
             default:
                 if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
                 {
-                    return IsNumericType(Nullable.GetUnderlyingType(type));
+                    return IsNumericType(Nullable.GetUnderlyingType(type)!);
                 }
                 return false;
         }

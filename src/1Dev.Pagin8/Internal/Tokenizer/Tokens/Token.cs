@@ -10,5 +10,5 @@ public abstract class Token
 
     public abstract string RevertToQueryString();
 
-    public string JsonPath { get; set; }
+    public string? JsonPath { get; set; }
 }

@@ -5,7 +5,7 @@ using _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
 namespace _1Dev.Pagin8.Test;
 
-public class DslConverterToFriendlyTests
+public class DslConverterToFriendlyTests : Pagin8TestBase
 {
     [Fact]
     public void Should_Render_Simple_ComparisonToken_With_Comment()

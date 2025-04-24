@@ -121,16 +121,19 @@ public class SortTokenizationStrategy : ITokenizationStrategy
         return sortExpressions;
     }
 
-    private static string TryProcessPlaceholders(string lastValue)
+    private static string TryProcessPlaceholders(string? lastValue)
     {
-
-        if (lastValue == null || lastValue.Equals(QueryConstants.NullPlaceholder, StringComparison.InvariantCultureIgnoreCase))
+        if (string.IsNullOrWhiteSpace(lastValue) ||
+            lastValue.Equals(QueryConstants.NullPlaceholder, StringComparison.InvariantCultureIgnoreCase))
         {
-            return null;
+            return string.Empty;
         }
 
-        return lastValue.Equals(QueryConstants.EmptyPlaceholder, StringComparison.InvariantCultureIgnoreCase) ? string.Empty : lastValue;
+        return lastValue.Equals(QueryConstants.EmptyPlaceholder, StringComparison.InvariantCultureIgnoreCase)
+            ? string.Empty
+            : lastValue;
     }
+
 
     private static bool KeyIsLast(IReadOnlyCollection<SortExpression> sortExpressions) => sortExpressions.All(x => string.IsNullOrEmpty(x.LastValue)) || (sortExpressions.Any() && sortExpressions.Last().Field == QueryConstants.KeyPlaceholder);
 }

@@ -107,15 +107,25 @@ public class TokenizationService(
     {
         if (!tokens.Any(x => x is PagingToken { Sort: not null })) return;
 
-        var pagingToken = tokens.Single(x => x is PagingToken) as PagingToken;
-        var sortExpressions = pagingToken!.Sort.SortExpressions;
+        var pagingToken = tokens.OfType<PagingToken>().SingleOrDefault();
+        if (pagingToken?.Sort == null) return;
+
+        var sortExpressions = pagingToken.Sort.SortExpressions;
 
         var entityKey = metadataProvider.GetEntityKey<T>();
         const string keyPlaceholder = QueryConstants.KeyPlaceholder;
 
-        if (sortExpressions.Any(x => x.Field.Equals(entityKey, StringComparison.InvariantCultureIgnoreCase) || x.Field.Equals(keyPlaceholder, StringComparison.InvariantCultureIgnoreCase))) return;
+        var alreadySortedByKey = sortExpressions.Any(x =>
+            x.Field.Equals(entityKey, StringComparison.InvariantCultureIgnoreCase) ||
+            x.Field.Equals(keyPlaceholder, StringComparison.InvariantCultureIgnoreCase));
 
-        sortExpressions.AddRange(PagingTokenizationStrategy.Default.Sort.SortExpressions);
+        if (alreadySortedByKey) return;
+
+        var defaultSort = PagingTokenizationStrategy.Default.Sort;
+        if (defaultSort != null)
+        {
+            sortExpressions.AddRange(defaultSort.SortExpressions);
+        }
     }
 
     private static void IdentifyExceptions(List<Token> tokens, QueryInputParameters input, out bool isMetaOnly, out bool isCountOnly)

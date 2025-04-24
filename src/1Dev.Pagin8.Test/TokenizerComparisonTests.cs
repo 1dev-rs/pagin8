@@ -5,7 +5,7 @@ using _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
 namespace _1Dev.Pagin8.Test;
 
-public class TokenizerComparisonTests
+public class TokenizerComparisonTests : Pagin8TestBase
 {
     private readonly Tokenizer _tokenizer = new();
 

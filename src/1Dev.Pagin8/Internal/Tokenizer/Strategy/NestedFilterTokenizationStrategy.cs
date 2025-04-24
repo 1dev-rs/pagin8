@@ -35,6 +35,6 @@ public class NestedFilterTokenizationStrategy(ITokenizer tokenizer) : ITokenizat
 
     public List<Token> Tokenize(string query, string jsonPath, int nestingLevel = 1)
     {
-        throw new System.NotImplementedException();
+        throw new NotImplementedException();
     }
 }

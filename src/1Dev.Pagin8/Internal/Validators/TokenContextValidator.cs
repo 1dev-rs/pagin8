@@ -26,7 +26,7 @@ public class TokenContextValidator(IPagin8MetadataProvider metadataProvider, ILo
         };
     }
 
-    private bool ValidateAndLog<T>(bool isValid, string field)
+    private bool ValidateAndLog<T>(bool isValid, string? field)
     {
         if (!isValid && field != null)
         {

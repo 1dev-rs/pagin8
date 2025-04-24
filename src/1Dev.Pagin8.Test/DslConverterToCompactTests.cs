@@ -5,7 +5,7 @@ using _1Dev.Pagin8.Internal;
 
 namespace _1Dev.Pagin8.Test;
 
-public class DslConverterToCompactTests
+public class DslConverterToCompactTests : Pagin8TestBase
 {
     [Fact]
     public void SingleCondition_WithComment_ShouldConvertCorrectly()

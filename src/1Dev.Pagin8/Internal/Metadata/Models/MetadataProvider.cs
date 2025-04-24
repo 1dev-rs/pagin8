@@ -39,10 +39,11 @@ public class MetadataProvider : IMetadataProvider
             flags.Add(NoSortFlag);
         }
 
-        List<ColumnMetadata> nestedProperties = null;
+        List<ColumnMetadata> nestedProperties = [];
         var arrayInnerType = GetIEnumerableElementType(propertyType);
 
-        var typeCode = Type.GetTypeCode(arrayInnerType ?? propertyType);
+        var effectiveType = arrayInnerType ?? propertyType;
+        var typeCode = Type.GetTypeCode(effectiveType);
         var typeStr = GetTypeString(typeCode);
 
         if (arrayInnerType != null)
@@ -63,7 +64,7 @@ public class MetadataProvider : IMetadataProvider
         return new ColumnMetadata(columnName, typeStr, flags) { Properties = nestedProperties };
     }
 
-    private static Type GetIEnumerableElementType(Type type)
+    private static Type? GetIEnumerableElementType(Type type)
     {
         if (type.IsArray) return type.GetElementType()!;
         if (type.IsGenericType && typeof(IEnumerable).IsAssignableFrom(type)) return type.GetGenericArguments()[0];

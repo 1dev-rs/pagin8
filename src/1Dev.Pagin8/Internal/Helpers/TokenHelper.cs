@@ -1,10 +1,10 @@
 ﻿using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
-using _1Dev.Pagin8.Internal.Configuration;
 using _1Dev.Pagin8.Internal.Exceptions.Base;
 using _1Dev.Pagin8.Internal.Exceptions.StatusCodes;
 using _1Dev.Pagin8.Internal.Tokenizer.Tokens;
+using Pagin8.Internal.Configuration;
 
 namespace _1Dev.Pagin8.Internal.Helpers;
 public static class TokenHelper
@@ -15,29 +15,29 @@ public static class TokenHelper
         { 2, ',' }
     };
 
-    public static string DateRangePattern => $@"^(?<field>\w+)=(?<negation>{ConfigurationProvider.Config.Negation}\.)?(?<operator>{string.Join("|", ConfigurationProvider.Config.DateRangeOperators)})\.(?<value>\d+)(?<range>[dmwy])(?<exact>e)?(?<strict>s)?(?:\^(?<comment>.+))?$";
+    public static string DateRangePattern => $@"^(?<field>\w+)=(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>{string.Join("|", EngineDefaults.Config.DateRangeOperators)})\.(?<value>\d+)(?<range>[dmwy])(?<exact>e)?(?<strict>s)?(?:\^(?<comment>.+))?$";
 
-    public static string NestedDateRangePattern => $@"^(?<field>\w+)\.(?<negation>{ConfigurationProvider.Config.Negation}\.)?(?<operator>{string.Join("|", ConfigurationProvider.Config.DateRangeOperators)})\.(?<value>\d+)(?<range>[dmwy])(?<exact>e)?(?<strict>s)?(?:\^(?<comment>.+))?$";
+    public static string NestedDateRangePattern => $@"^(?<field>\w+)\.(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>{string.Join("|", EngineDefaults.Config.DateRangeOperators)})\.(?<value>\d+)(?<range>[dmwy])(?<exact>e)?(?<strict>s)?(?:\^(?<comment>.+))?$";
 
-    public static string ComparisonPattern => $@"^(?<field>[^.]+)=(?<negation>{ConfigurationProvider.Config.Negation}\.)?(?<operator>({string.Join("|", ConfigurationProvider.Config.ComparisonOperators)}))\.(?<val>.*?)(?:\^(?<comment>.+))?$";
+    public static string ComparisonPattern => $@"^(?<field>[^.]+)=(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>({string.Join("|", EngineDefaults.Config.ComparisonOperators)}))\.(?<val>.*?)(?:\^(?<comment>.+))?$";
 
-    public static string NestedComparisonPattern => $@"^(?<field>[^.]+)\.(?<negation>{ConfigurationProvider.Config.Negation}\.)?(?<operator>({string.Join("|", ConfigurationProvider.Config.ComparisonOperators)}))\.(?<val>.*?)(?:\^(?<comment>.+))?$";
+    public static string NestedComparisonPattern => $@"^(?<field>[^.]+)\.(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>({string.Join("|", EngineDefaults.Config.ComparisonOperators)}))\.(?<val>.*?)(?:\^(?<comment>.+))?$";
 
-    public static string IsPattern => $@"^(?<field>[^.]+)=(?<operator>{ConfigurationProvider.Config.IsOperator})\.(?<negation>{ConfigurationProvider.Config.Negation}\.)?(?<val>.*?)(?:\^(?<comment>.+))?$";
+    public static string IsPattern => $@"^(?<field>[^.]+)=(?<operator>{EngineDefaults.Config.IsOperator})\.(?<negation>{EngineDefaults.Config.Negation}\.)?(?<val>.*?)(?:\^(?<comment>.+))?$";
 
-    public static string NestedIsPattern => $@"^(?<field>[^.]+)\.(?<operator>{ConfigurationProvider.Config.IsOperator})\.(?<negation>{ConfigurationProvider.Config.Negation}\.)?(?<val>.*?)(?:\^(?<comment>.+))?$";
+    public static string NestedIsPattern => $@"^(?<field>[^.]+)\.(?<operator>{EngineDefaults.Config.IsOperator})\.(?<negation>{EngineDefaults.Config.Negation}\.)?(?<val>.*?)(?:\^(?<comment>.+))?$";
 
-    public static string InPattern => $@"^(?<field>[^.=]+)=(?:(?<negation>{ConfigurationProvider.Config.Negation})\.)?(?:(?<comparison>eq|is|gt|gte|lt|lte|stw|enw|like|cs)\.)?(?<operator>{ConfigurationProvider.Config.InOperator})\.(?<values>\(([^)]+)\)|[^)]+)(?:\^(?<comment>.+))?$";
+    public static string InPattern => $@"^(?<field>[^.=]+)=(?:(?<negation>{EngineDefaults.Config.Negation})\.)?(?:(?<comparison>eq|is|gt|gte|lt|lte|stw|enw|like|cs)\.)?(?<operator>{EngineDefaults.Config.InOperator})\.(?<values>\(([^)]+)\)|[^)]+)(?:\^(?<comment>.+))?$";
 
-    public static string NestedInPattern => $@"^(?<field>[^.=]+)(?:\.(?<negation>{ConfigurationProvider.Config.Negation}))?(?:\.(?<comparison>eq|is|gt|gte|lt|lte|stw|enw|like|cs))?\.(?<operator>{ConfigurationProvider.Config.InOperator})\.(?<values>\(([^)]+)\)|[^)]+)(?:\^(?<comment>.+))?$";
+    public static string NestedInPattern => $@"^(?<field>[^.=]+)(?:\.(?<negation>{EngineDefaults.Config.Negation}))?(?:\.(?<comparison>eq|is|gt|gte|lt|lte|stw|enw|like|cs))?\.(?<operator>{EngineDefaults.Config.InOperator})\.(?<values>\(([^)]+)\)|[^)]+)(?:\^(?<comment>.+))?$";
 
-    public static string GroupingPattern => $@"^(?<negation>{ConfigurationProvider.Config.Negation}\.)?(?<operator>{string.Join("|", ConfigurationProvider.Config.GroupOperators)})=\((?<val>.*)\)(?:\^(?<comment>.+))?$";
+    public static string GroupingPattern => $@"^(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>{string.Join("|", EngineDefaults.Config.GroupOperators)})=\((?<val>.*)\)(?:\^(?<comment>.+))?$";
 
-    public static string NestedGroupingPattern => $@"^(?<negation>{ConfigurationProvider.Config.Negation}\.)?(?<operator>{string.Join("|", ConfigurationProvider.Config.GroupOperators)})\((?<val>.*)\)(?:\^(?<comment>.+))?$";
+    public static string NestedGroupingPattern => $@"^(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>{string.Join("|", EngineDefaults.Config.GroupOperators)})\((?<val>.*)\)(?:\^(?<comment>.+))?$";
 
-    public static string SortExpressionPlainPattern => $@"(?<field>\$?\w+)\.(?<order>{string.Join("|", ConfigurationProvider.Config.PossibleOrder)})";
+    public static string SortExpressionPlainPattern => $@"(?<field>\$?\w+)\.(?<order>{string.Join("|", EngineDefaults.Config.PossibleOrder)})";
 
-    public static string SortExpressionPagingPattern => $@"(?<field>\$?\w+)\.(?<order>{string.Join("|", ConfigurationProvider.Config.PossibleOrder)})\.(?<lastValue>.*?)(?=(\.\w+\.)|(?:,\w+\.)|$)";
+    public static string SortExpressionPagingPattern => $@"(?<field>\$?\w+)\.(?<order>{string.Join("|", EngineDefaults.Config.PossibleOrder)})\.(?<lastValue>.*?)(?=(\.\w+\.)|(?:,\w+\.)|$)";
 
     public static string PagingSectionPattern => @"paging=\((.*)\)";
 
@@ -51,7 +51,7 @@ public static class TokenHelper
     {
         get
         {
-            var properties = ConfigurationProvider.Config.MetaInclude;
+            var properties = EngineDefaults.Config.MetaInclude;
             if (properties.Count == 0)
                 return "";
 

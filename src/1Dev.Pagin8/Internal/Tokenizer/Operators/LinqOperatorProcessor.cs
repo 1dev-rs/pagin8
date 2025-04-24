@@ -83,18 +83,25 @@ public static class LinqOperatorProcessor
 
     private static MethodInfo GetMethodInfo(ComparisonOperator comparisonOperator)
     {
-        switch (comparisonOperator)
+        var method = comparisonOperator switch
         {
-            case ComparisonOperator.Contains:
-            case ComparisonOperator.Like:
-                return typeof(string).GetMethod(nameof(string.Contains), [typeof(string), typeof(StringComparison)]);
-            case ComparisonOperator.StartsWith:
-                return typeof(string).GetMethod(nameof(string.StartsWith), [typeof(string), typeof(StringComparison)]);
-            case ComparisonOperator.EndsWith:
-                return typeof(string).GetMethod(nameof(string.EndsWith), [typeof(string), typeof(StringComparison)]);
-            default:
-                throw new NotImplementedException($"Method for operator {comparisonOperator} is not implemented.");
-        }
+            ComparisonOperator.Contains or ComparisonOperator.Like =>
+                typeof(string).GetMethod(nameof(string.Contains), [typeof(string), typeof(StringComparison)]),
+
+            ComparisonOperator.StartsWith =>
+                typeof(string).GetMethod(nameof(string.StartsWith), [typeof(string), typeof(StringComparison)]),
+
+            ComparisonOperator.EndsWith =>
+                typeof(string).GetMethod(nameof(string.EndsWith), [typeof(string), typeof(StringComparison)]),
+
+            _ => throw new NotImplementedException($"Method for operator {comparisonOperator} is not implemented.")
+        };
+
+        if (method is null)
+            throw new InvalidOperationException($"Method for {comparisonOperator} not found — check .NET version or string signature.");
+
+        return method;
     }
+
     #endregion
 }

@@ -76,14 +76,13 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
 
     public IQueryable<T> Visit(GroupToken groupToken, IQueryable<T> queryable)
     {
-        Expression combinedExpression = null;
+        Expression? combinedExpression = null;
 
         foreach (var token in groupToken.Tokens)
         {
             var tokenResult = token.Accept(this, queryable);
             var expressionToAdd = tokenResult.Expression.ExtractLambda<T>();
 
-            if (expressionToAdd == null) continue;
 
             var adjustedExpressionToAdd = new ReplaceExpressionVisitor(expressionToAdd.Parameters[0], _parameter).Visit(expressionToAdd.Body);
 
@@ -93,13 +92,12 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
             }
             else
             {
-                if (adjustedExpressionToAdd != null)
-                    combinedExpression = groupToken.NestingOperator switch
-                    {
-                        NestingOperator.And => Expression.AndAlso(combinedExpression, adjustedExpressionToAdd),
-                        NestingOperator.Or => Expression.OrElse(combinedExpression, adjustedExpressionToAdd),
-                        _ => combinedExpression
-                    };
+                combinedExpression = groupToken.NestingOperator switch
+                {
+                    NestingOperator.And => Expression.AndAlso(combinedExpression, adjustedExpressionToAdd),
+                    NestingOperator.Or => Expression.OrElse(combinedExpression, adjustedExpressionToAdd),
+                    _ => combinedExpression
+                };
             }
         }
 
@@ -532,7 +530,7 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
     }
 
 
-    private static object SafeConvert(object value, Type targetType)
+    private static object? SafeConvert(object? value, Type targetType)
     {
         if (targetType == null)
         {
@@ -555,6 +553,9 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
     private static IQueryable<T> ProcessArrayOperation(ArrayOperationToken token, IQueryable<T> queryable, PropertyInfo propertyInfo, Type elementType)
     {
         var values = token.Values.Select(v => Convert.ChangeType(v, elementType)).ToList();
+        if (values.Count == 0)
+            return queryable; // or throw?
+
         var parameter = Expression.Parameter(typeof(T), "x");
         var propertyExpression = Expression.Property(parameter, propertyInfo);
 

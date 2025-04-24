@@ -5,7 +5,7 @@ using _1Dev.Pagin8.Internal.Tokenizer.Tokens.Sort;
 
 namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
-public class PagingToken(SortToken sort, LimitToken limit, ShowCountToken showCount) : Token
+public class PagingToken(SortToken? sort, LimitToken? limit, ShowCountToken? showCount) : Token
 {
     public override QueryBuilderResult Accept<T>(ISqlTokenVisitor visitor, QueryBuilderResult result)
     {
@@ -28,13 +28,13 @@ public class PagingToken(SortToken sort, LimitToken limit, ShowCountToken showCo
         return sb.ToString();
     }
 
-    public SortToken Sort { get; set; } = sort;
+    public SortToken? Sort { get; set; } = sort;
 
-    public LimitToken Limit { get; set; } = limit;
+    public LimitToken? Limit { get; set; } = limit;
 
-    public ShowCountToken Count { get; set; } = showCount;
+    public ShowCountToken? Count { get; set; } = showCount;
 
-    private static void AppendTokenQueryString(StringBuilder sb, Token token)
+    private static void AppendTokenQueryString(StringBuilder sb, Token? token)
     {
         if (token == null) return;
         sb.Append(token.RevertToQueryString());

@@ -25,7 +25,7 @@ public class QueryInputParameters
         };
     }
 
-    public string QueryString { get; init; }
+    public required string QueryString { get; init; }
 
     public string DefaultQueryString { get; init; }
 
