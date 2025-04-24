@@ -29,7 +29,7 @@ jobs:
       working-directory: src
 
     - name: Run tests
-      run: dotnet test --no-build --verbosity normal
+      run: dotnet test --verbosity normal
       working-directory: src
 
     - name: Pack NuGet package
