@@ -4,6 +4,7 @@ using _1Dev.Pagin8.Internal.DateProcessor;
 using _1Dev.Pagin8.Internal.Exceptions.Base;
 using _1Dev.Pagin8.Internal.Exceptions.StatusCodes;
 using _1Dev.Pagin8.Internal.Metadata;
+using _1Dev.Pagin8.Internal.Metadata.Models;
 using _1Dev.Pagin8.Internal.Tokenizer;
 using _1Dev.Pagin8.Internal.Tokenizer.Contracts;
 using _1Dev.Pagin8.Internal.Validators;
@@ -61,6 +62,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient(typeof(ILinqTokenVisitor<>), typeof(LinqTokenVisitor<>));
         services.AddTransient<IContextValidator, TokenContextValidator>();
         services.AddTransient<IPagin8MetadataProvider, Pagin8MetadataProvider>();
+        services.AddTransient<IMetadataProvider, MetadataProvider>();
         services.AddTransient<ISqlQueryBuilder, SqlQueryBuilder>();
         services.AddTransient(typeof(IQueryableTokenProcessor<>), typeof(QueryableTokenProcessor<>));
 
