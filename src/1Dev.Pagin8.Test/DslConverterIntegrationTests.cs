@@ -47,3 +47,4 @@ public class DslConverterIntegrationTests : Pagin8TestBase
         friendly.Should().Be(expected.Replace("\r\n", "\n"));
     }
 }
+

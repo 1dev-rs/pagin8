@@ -27,6 +27,6 @@ public abstract class TokenizationStrategyFactory
 
     public static TokenizationStrategyFactory GetFactory(string query)
     {
-        return FactoryRegistry.FirstOrDefault(kv => kv.Key(query)).Value ?? throw new NotSupportedException("Provided format doesn't match with any tokenization factory");
+        return FactoryRegistry.FirstOrDefault(kv => kv.Key(query)).Value ?? throw new NotSupportedException($"Provided format doesn't match with any tokenization factory: {query}");
     }
 }
