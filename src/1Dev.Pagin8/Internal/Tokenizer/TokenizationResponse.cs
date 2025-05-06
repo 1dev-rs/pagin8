@@ -2,7 +2,7 @@
 
 namespace _1Dev.Pagin8.Internal.Tokenizer;
 
-public record TokenizationResponse(List<Token> Tokens, string SanitizedQuery, bool IsMetaOnly = false, bool IsCountOnly = false)
+public record TokenizationResponse(List<Token> Tokens, string SanitizedQuery, bool IsCountOnly = false)
 {
     public static TokenizationResponse CreateEmpty()
     {
@@ -11,8 +11,6 @@ public record TokenizationResponse(List<Token> Tokens, string SanitizedQuery, bo
     public List<Token> Tokens { get; set; } = Tokens;
 
     public string SanitizedQuery { get; set; } = SanitizedQuery;
-
-    public bool IsMetaOnly { get; set; } = IsMetaOnly;
 
     public bool IsCountOnly { get; set; } = IsCountOnly;
 }

@@ -7,6 +7,4 @@ public record QueryBuilderResult
     public required QueryBuilder Builder { get; set; }
 
     public Meta Meta { get; set; } = new();
-
-    public bool ShouldSkipBuilder { get; set; } = false;
 }

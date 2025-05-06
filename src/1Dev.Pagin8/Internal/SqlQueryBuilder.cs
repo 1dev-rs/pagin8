@@ -52,7 +52,6 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
         where T : class
     {
         TrySkipBuildWhenOnlyCountRequested<T>(tokenizationResponse, result);
-        TrySkipBuildWhenOnlyMetaRequested(tokenizationResponse, result);
     }
 
     private static void UpdateQueryMeta(QueryBuilderResult result, TokenizationResponse tokenizationResponse)
@@ -62,7 +61,7 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
 
     private static void WrapQueryAsJsonIfNeeded(QueryInputParameters input, QueryBuilderResult result)
     {
-        if (input.IsJson)
+        if (input.IsJson && result.Builder != null!)
         {
             result.Builder = BuildJsonWrapper(result.Builder, input.CtePrefix, input.IsCount);
         }
@@ -81,20 +80,11 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
         }
     }
 
-    private static void TrySkipBuildWhenOnlyMetaRequested(TokenizationResponse tokenizationResponse,
-        QueryBuilderResult result)
-    {
-        if (tokenizationResponse.IsMetaOnly)
-        {
-            result.ShouldSkipBuilder = true; // Skip fetching data
-        }
-    }
-
     private void ProcessCountToken<T>(ShowCountToken? showCount, QueryBuilderResult result) where T : class
     {
         if(showCount is null) return;
         result = tokenVisitor.Visit<T>(showCount, result);
-        result.ShouldSkipBuilder = true; // Skip fetching data
+        result.Builder = null!; // Skip fetching data
     }
 
     private void BuildQueryFromTokens<T>(QueryBuilderResult result, IEnumerable<Token> tokens, bool isCount)

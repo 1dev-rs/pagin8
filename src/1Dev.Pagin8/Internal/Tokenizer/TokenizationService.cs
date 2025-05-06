@@ -29,7 +29,7 @@ public class TokenizationService(
         {
             throw new Pagin8Exception(Pagin8StatusCode.Pagin8_TokenFieldInvalid.Code);
         }
-        IdentifyExceptions(tokens, input, out var isMetaOnly, out var isCountOnly);
+        IdentifyExceptions(tokens, input, out var isCountOnly);
 
         if (!input.IsDefault)
         {
@@ -40,7 +40,7 @@ public class TokenizationService(
         TryEnsureSortByKey<T>(tokens);
         
         var sanitizedQuery = Standardize(tokens);
-        return new TokenizationResponse(tokens, sanitizedQuery, isMetaOnly, isCountOnly);
+        return new TokenizationResponse(tokens, sanitizedQuery, isCountOnly);
     }
 
     public string Standardize<T>(string queryString, bool isDefault = false) where T : class
@@ -128,10 +128,9 @@ public class TokenizationService(
         }
     }
 
-    private static void IdentifyExceptions(List<Token> tokens, QueryInputParameters input, out bool isMetaOnly, out bool isCountOnly)
+    private static void IdentifyExceptions(List<Token> tokens, QueryInputParameters input, out bool isCountOnly)
     {
          isCountOnly = IsCountOnly(tokens, input.IsCount);
-         isMetaOnly = IsMetaOnly(tokens);
     }
 
     private static bool IsCountOnly(List<Token> tokens, bool isCount)
@@ -142,16 +141,6 @@ public class TokenizationService(
 
         return !isCount && tokens.Count == 1 && pagingToken != null;
     }
-
-    private static bool IsMetaOnly(List<Token> tokens)
-    {
-        return tokens.Count switch
-        {
-            1 when tokens.First() is MetaIncludeToken => true,
-            _ => false
-        };
-    }
-
 
     private List<Token> MergeWithDefaultTokens(QueryInputParameters input, List<Token> tokens)
     {
@@ -165,11 +154,11 @@ public class TokenizationService(
 
     private static List<Token> CompareAndMergeTokens(List<Token> tokens, List<Token> defaultTokens)
     {
-        var hasOnlyMetaIncludeToken = tokens.Count == 1 && tokens.First() is MetaIncludeToken;
+        //var hasOnlyMetaIncludeToken = tokens.Count == 1 && tokens.First() is MetaIncludeToken;
         var hasOnlyPagingCountToken = tokens.Count == 1 &&
                                       tokens.First() is PagingToken { Count: not null, Sort: null, Limit: null };
 
-        if (hasOnlyMetaIncludeToken || hasOnlyPagingCountToken)
+        if (hasOnlyPagingCountToken)
         {
             return tokens;
         }

@@ -102,7 +102,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     public QueryBuilderResult Visit<T>(SelectToken token, QueryBuilderResult result) where T : class
     {
-        if (result.ShouldSkipBuilder) return result; // Skip select for count only
+        if (result.Builder == null!) return result; // Skip select for count only
 
         var requestedFields = !token.Fields.Contains(QueryConstants.SelectAsterisk) ?
             token.Fields.ToList() :
