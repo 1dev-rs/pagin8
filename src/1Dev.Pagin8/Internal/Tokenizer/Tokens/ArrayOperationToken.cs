@@ -1,13 +1,29 @@
 ﻿using _1Dev.Pagin8.Internal.Tokenizer.Contracts;
 using _1Dev.Pagin8.Internal.Tokenizer.Operators;
+using Pagin8.Internal.Configuration;
+using System.Text;
 
 namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
-public class ArrayOperationToken(string field, List<string> values, ArrayOperationType operationType) : FilterToken
+public class ArrayOperationToken : FilterToken
 {
-    public string Field { get; private set; } = field;
-    public List<string> Values { get; private set; } = values;
-    public ArrayOperationType OperationType { get; private set; } = operationType;
+    public ArrayOperationToken(string field, List<string> values, ArrayOperator operationType, bool isNegated, int nestingLevel, string? comment)
+    {
+        Field = field;
+        Values = values;
+        Operator = operationType;
+        IsNegated = isNegated;
+        NestingLevel = nestingLevel;
+        Comment = comment;
+    }
+
+    public string Field { get; private set; }
+    public List<string> Values { get; private set; }
+    public ArrayOperator Operator { get; private set; }
+
+    public bool IsNegated { get; private set; }
+
+    public int NestingLevel { get; private set; }
 
     public override QueryBuilderResult Accept<T>(ISqlTokenVisitor visitor, QueryBuilderResult result) => visitor.Visit<T>(this, result);
 
@@ -15,15 +31,29 @@ public class ArrayOperationToken(string field, List<string> values, ArrayOperati
 
     public override string RevertToQueryString()
     {
-        var valuesFormatted = string.Join(",", Values);
-        switch (OperationType)
+        var sb = new StringBuilder();
+
+        sb.Append(Field);
+
+        sb.Append(NestingLevel == 1 ? '=' : '.');
+
+        if (IsNegated)
         {
-            case ArrayOperationType.Include:
-                return $"{Field}.incl({valuesFormatted})";
-            case ArrayOperationType.Exclude:
-                return $"{Field}.excl({valuesFormatted})";
-            default:
-                throw new InvalidOperationException("Unsupported operation type.");
+            var negation = EngineDefaults.Config.Negation;
+            sb.Append($"{negation}.");
         }
+
+        sb.Append(Operator.GetDslOperator());
+
+        var valuesFormatted = string.Join(",", Values);
+        sb.Append('(').Append(valuesFormatted).Append(')');
+
+        if (!string.IsNullOrWhiteSpace(Comment))
+        {
+            sb.Append('^').Append(Comment);
+        }
+
+        return sb.ToString();
     }
+
 }

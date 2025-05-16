@@ -158,6 +158,23 @@ public static class SqlOperatorProcessor
 
         return result;
     }
+
+    public static ArrayOperator GetArrayOperator(this string op)
+    {
+        if (!SqlOperatorConstants.ArrayOperatorMap.TryGetValue(op, out var result))
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_UnsupportedComparison.Code);
+
+        return result;
+    }
+
+    public static string GetDslOperator(this ArrayOperator token)
+    {
+        if (!SqlOperatorConstants.ReverseArrayOperatorMap.TryGetValue(token, out var result))
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_UnsupportedComparison.Code);
+
+        return result;
+    }
+
     #endregion
 
 

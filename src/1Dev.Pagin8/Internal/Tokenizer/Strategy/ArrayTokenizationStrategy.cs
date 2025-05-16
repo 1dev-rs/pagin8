@@ -14,14 +14,22 @@ public class ArrayTokenizationStrategy : ITokenizationStrategy
     {
         TokenValidator.ValidateNesting(nestingLevel);
 
-        var match = Regex.Match(query, TokenHelper.ArraySectionPattern);
+        var pattern = nestingLevel == 1
+            ? TokenHelper.ArrayPattern
+            : TokenHelper.NestedArrayPattern;
+
+        var match = Regex.Match(query, pattern);
         if (!match.Success) throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code);
 
-        var field = match.Groups[1].Value;
-        var operation = match.Groups[2].Value.Equals("incl") ? ArrayOperationType.Include : ArrayOperationType.Exclude;
-        var values = match.Groups[3].Value.Split(',').Select(v => v.Trim()).ToList();
+        var field = match.Groups["field"].Value;
+        var operation = match.Groups["mode"].Value.GetArrayOperator();
+        var values = match.Groups["values"].Value.Split(',').Select(v => v.Trim()).ToList();
+        var isNegated = !string.IsNullOrEmpty(match.Groups["negation"].Value);
+        var comment = match.Groups["comment"].Success
+            ? match.Groups["comment"].Value.Trim()
+            : null;
 
-        var arrayToken =  new ArrayOperationToken(field, values, operation);
+        var arrayToken =  new ArrayOperationToken(field, values, operation, isNegated, nestingLevel, comment);
 
         return [arrayToken];
     }
@@ -30,17 +38,22 @@ public class ArrayTokenizationStrategy : ITokenizationStrategy
     {
         TokenValidator.ValidateNesting(nestingLevel);
 
-        var match = Regex.Match(query, TokenHelper.ArraySectionPattern);
+        var pattern = nestingLevel == 1
+            ? TokenHelper.InPattern
+            : TokenHelper.NestedInPattern;
+
+        var match = Regex.Match(query, pattern);
         if (!match.Success) throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code);
 
-        var field = match.Groups[1].Value;
-        var operation = match.Groups[2].Value.Equals("incl") ? ArrayOperationType.Include : ArrayOperationType.Exclude;
-        var values = match.Groups[3].Value.Split(',').Select(v => v.Trim()).ToList();
+        var field = match.Groups["field"].Value;
+        var operation = match.Groups["mode"].Value.GetArrayOperator();
+        var values = match.Groups["values"].Value.Split(',').Select(v => v.Trim()).ToList();
+        var isNegated = !string.IsNullOrEmpty(match.Groups["negation"].Value);
+        var comment = match.Groups["comment"].Success
+            ? match.Groups["comment"].Value.Trim()
+            : null;
 
-        var arrayToken = new ArrayOperationToken(field, values, operation)
-        {
-            JsonPath = field
-        };
+        var arrayToken = new ArrayOperationToken(field, values, operation, isNegated, nestingLevel, comment);
 
         return [arrayToken];
     }

@@ -43,7 +43,9 @@ public static class TokenHelper
 
     public static string NestedFilterPattern => @"^(?<field>\w+)\.with=\((?<conditions>[\s\S]*)\)(?:\^(?<comment>.+))?$";
 
-    public static string ArraySectionPattern => @"^(?<field>\w+)\.(?<mode>incl|excl)\((?<values>.*)\)(?:\^(?<comment>.+))?$";
+    public static string ArrayPattern => $@"^(?<field>[^.=]+)=(?:(?<negation>{EngineDefaults.Config.Negation})\.)?(?<mode>incl|excl)\((?<values>.*)\)(?:\^(?<comment>.+))?$";
+
+    public static string NestedArrayPattern => $@"^(?<field>[^.=]+)(?:\.(?<negation>{EngineDefaults.Config.Negation}))?\.(?<mode>incl|excl)\((?<values>.*)\)(?:\^(?<comment>.+))?$";
 
     public static string SortExpressionKeyPattern => @$"^\{QueryConstants.KeyPlaceholder}\.([^\s]+)";
 
@@ -168,5 +170,5 @@ public static class TokenHelper
 
     public static bool IsNestedFilterOperation(string query) => Regex.IsMatch(query, NestedFilterPattern);
 
-    public static bool IsArrayOperation(string query) => Regex.IsMatch(query, ArraySectionPattern);
+    public static bool IsArrayOperation(string query) => Regex.IsMatch(query, ArrayPattern) || Regex.IsMatch(query, NestedArrayPattern);
 }

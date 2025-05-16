@@ -161,21 +161,21 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     public QueryBuilderResult Visit<T>(ArrayOperationToken token, QueryBuilderResult result) where T : class
     {
-        var innerType = GetInnerTypeOfIEnumerable<T>();
+        var elementType = GetArrayElementType<T>(token.Field);
 
-        if (innerType.IsPrimitive || innerType == typeof(string))
+        if (elementType.IsPrimitive || elementType == typeof(string))
         {
-            ProcessSimpleTypeArray(token, result, innerType);
+            ProcessSimpleTypeArray(token, result, elementType);
         }
         else
         {
-            var columnInfo = GetColumnInfo(innerType, token.Field);
-            var type = columnInfo.Type;
-
-            ProcessComplexTypeArray(token, result, type);
+            var columnInfo = GetColumnInfo(elementType, token.Field);
+            ProcessComplexTypeArray(token, result, columnInfo.Type);
         }
+
         return result;
     }
+
 
     public QueryBuilderResult Visit<T>(DateRangeToken token, QueryBuilderResult result) where T : class
     {
@@ -656,30 +656,59 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         return reservedWords.Contains(columnName.ToUpper()) ? $"\"{columnName.PascalToCamelCase()}\"" : columnName.PascalToCamelCase();
     }
-
-    private static Type GetInnerTypeOfIEnumerable<T>()
+    
+    private static Type GetArrayElementType<T>(string fieldName)
     {
-        var type = typeof(T);
+        var entityType = typeof(T);
+        var property = entityType.GetProperty(
+            fieldName,
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase
+        );
 
-        if (!typeof(IEnumerable).IsAssignableFrom(type)) throw new ArgumentException("Provided type does not implement IEnumerable", nameof(type));
+        if (property == null)
+            throw new InvalidOperationException($"Property '{fieldName}' not found on type '{entityType.Name}'.");
 
-        return type.IsGenericType ? type.GetGenericArguments()[0] : typeof(object);
+        var fieldType = property.PropertyType;
+        Type elementType;
+
+        if (fieldType.IsArray)
+        {
+            elementType = fieldType.GetElementType() ?? throw new InvalidOperationException("Unrecognized element type");
+        }
+        else if (fieldType.IsGenericType && typeof(IEnumerable).IsAssignableFrom(fieldType))
+        {
+            elementType = fieldType.GetGenericArguments()[0];
+        }
+        else
+        {
+            throw new InvalidOperationException($"Property '{fieldName}' is not an array or IEnumerable-compatible.");
+        }
+
+        return elementType;
     }
-
 
     private static void ProcessSimpleTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type arrayType)
     {
         var arrayTypeSpecifier = GetPostgresArrayType(arrayType);
         var valuesFormatted = FormatArrayValues(token.Values, arrayType);
 
-        if (token.OperationType == ArrayOperationType.Include && valuesFormatted.Any())
-        {
-            result.Builder.Append($"{token.Field:raw} @> ARRAY[{valuesFormatted:raw}]{arrayTypeSpecifier:raw}");
-        }
+        if (!valuesFormatted.Any())
+            return;
 
-        if (token.OperationType == ArrayOperationType.Exclude && valuesFormatted.Any())
+        var filterSql = token.Operator switch
         {
-            result.Builder.Append($"NOT ({token.Field:raw} && ARRAY[{valuesFormatted:raw}]{arrayTypeSpecifier:raw})");
+            ArrayOperator.Include => $"{token.Field} @> ARRAY[{valuesFormatted}]{arrayTypeSpecifier}",
+            ArrayOperator.Exclude => $"NOT ({token.Field} && ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+            _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
+        };
+
+        if (token.IsNegated)
+        {
+            result.Builder.Append($" NOT ({filterSql:raw})");
+        }
+        else
+        {
+            result.Builder.Append($" {filterSql:raw}");
         }
     }
 
@@ -694,16 +723,25 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var arrayTypeSpecifier = GetPostgresArrayType(arrayType);
         var valuesFormatted = FormatArrayValues(token.Values, arrayType);
 
+        if (!valuesFormatted.Any())
+            return;
+
         var leftHandSideArray = $"ARRAY(SELECT x ->> '{token.Field}' FROM jsonb_array_elements({token.JsonPath}) as x)";
 
-        if (token.OperationType == ArrayOperationType.Include && valuesFormatted.Any())
+        var filterSql = token.Operator switch
         {
-            result.Builder.Append($"{leftHandSideArray:raw} @> ARRAY[{valuesFormatted:raw}]{arrayTypeSpecifier:raw}");
-        }
+            ArrayOperator.Include => $"{leftHandSideArray} @> ARRAY[{valuesFormatted}]{arrayTypeSpecifier}",
+            ArrayOperator.Exclude => $"NOT ({leftHandSideArray} && ARRAY[{valuesFormatted}]{arrayTypeSpecifier}) OR jsonb_array_length({token.JsonPath}) = 0",
+            _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
+        };
 
-        if (token.OperationType == ArrayOperationType.Exclude && valuesFormatted.Any())
+        if (token.IsNegated)
         {
-            result.Builder.Append($"NOT ({leftHandSideArray:raw} && ARRAY[{valuesFormatted:raw}]{arrayTypeSpecifier:raw}) OR jsonb_array_length({token.JsonPath:raw}) = 0");
+            result.Builder.Append($"NOT ({filterSql:raw})");
+        }
+        else
+        {
+            result.Builder.Append($"{filterSql:raw}");
         }
     }
 
@@ -717,7 +755,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         if (type == typeof(int))
             return "::int[]";
         if (type == typeof(string))
-            return "::text[]";
+            return "::varchar[]";
         throw new ArgumentException("Unsupported array type.");
     }
 

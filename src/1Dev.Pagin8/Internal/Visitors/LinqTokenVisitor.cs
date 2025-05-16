@@ -559,27 +559,29 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
         var parameter = Expression.Parameter(typeof(T), "x");
         var propertyExpression = Expression.Property(parameter, propertyInfo);
 
-        var body = token.OperationType switch
+        var body = token.Operator switch
         {
-            ArrayOperationType.Include => values.Aggregate((Expression)null, (current, value) =>
+            ArrayOperator.Include => values.Aggregate((Expression)null, (current, value) =>
                 current == null
                     ? Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value))
                     : Expression.AndAlso(current, Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value)))),
 
-            ArrayOperationType.Exclude => values.Aggregate((Expression)null, (current, value) =>
+            ArrayOperator.Exclude => values.Aggregate((Expression)null, (current, value) =>
                 current == null ?
                     Expression.Not(Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value))) :
                     Expression.AndAlso(current, Expression.Not(Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value))))
                 ),
 
 
-            _ => throw new NotSupportedException($"Unsupported operation type: {token.OperationType}")
+            _ => throw new NotSupportedException($"Unsupported operation type: {token.Operator}")
         };
 
         if (body == null)
             return queryable;
 
-        var lambda = Expression.Lambda<Func<T, bool>>(body, parameter);
+        var finalBody = token.IsNegated ? Expression.Not(body) : body;
+
+        var lambda = Expression.Lambda<Func<T, bool>>(finalBody, parameter);
         return queryable.Where(lambda);
     }
 

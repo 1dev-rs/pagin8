@@ -109,4 +109,12 @@ public static class SqlOperatorConstants
         { ComparisonOperator.Equals, "NOT ILIKE" },
         { ComparisonOperator.In, "NOT ({0} ILIKE ANY (ARRAY[{1}]))" }
     };
+
+    public static readonly Dictionary<string, ArrayOperator> ArrayOperatorMap = new()
+    {
+        { "incl", ArrayOperator.Include },
+        { "excl", ArrayOperator.Exclude }
+    };
+
+    public static readonly Dictionary<ArrayOperator, string> ReverseArrayOperatorMap = ArrayOperatorMap.ToDictionary(kv => kv.Value, kv => kv.Key);
 }
