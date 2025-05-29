@@ -1,5 +1,7 @@
 ﻿using System.Linq.Expressions;
 using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace _1Dev.Pagin8.Internal.Tokenizer.Operators;
 public static class LinqOperatorProcessor
@@ -24,7 +26,6 @@ public static class LinqOperatorProcessor
             case ComparisonOperator.Contains:
             case ComparisonOperator.StartsWith:
             case ComparisonOperator.EndsWith:
-            case ComparisonOperator.Like:
                 if (!isText)
                     throw new InvalidOperationException("String methods can only be applied to string types.");
 
@@ -40,6 +41,30 @@ public static class LinqOperatorProcessor
                 var notNull = Expression.NotEqual(left, Expression.Constant(null, typeof(string)));
                 body = Expression.AndAlso(notNull, methodCall);
                 break;
+            case ComparisonOperator.Like:
+                if (!isText)
+                    throw new InvalidOperationException("LIKE can only be applied to string types.");
+
+                if (left.Type != typeof(string))
+                    throw new InvalidOperationException("Left operand must be of type string.");
+
+                if (right is not ConstantExpression { Value: string likePattern })
+                    throw new InvalidOperationException("Right operand must be a constant string expression.");
+
+                // Convert SQL LIKE pattern to regex pattern - N.Z
+                var regexPattern = SqlLikeToRegex(likePattern);
+
+                var regexMatchCall = Expression.Call(
+                    typeof(Regex).GetMethod(nameof(Regex.IsMatch), [typeof(string), typeof(string), typeof(RegexOptions)])!,
+                    left,
+                    Expression.Constant(regexPattern),
+                    Expression.Constant(RegexOptions.IgnoreCase)
+                );
+
+                // wrap in null check: left != null && left.Method() - N.Z
+                var notNullCheck = Expression.NotEqual(left, Expression.Constant(null, typeof(string)));
+                body = Expression.AndAlso(notNullCheck, regexMatchCall);
+                break;
 
             default:
                 throw new NotImplementedException($"Operator {op} is not implemented.");
@@ -52,6 +77,26 @@ public static class LinqOperatorProcessor
     #endregion
 
     #region Private methods
+
+    private static string SqlLikeToRegex(string likePattern)
+    {
+        var sb = new StringBuilder("^");
+
+        foreach (char c in likePattern)
+        {
+            sb.Append(c switch
+            {
+                '_' => ".",       
+                '%' => ".*",      
+                '\\' => "\\\\", 
+                '.' or '$' or '^' or '{' or '[' or '(' or '|' or ')' or '*' or '+' or '?' => $"\\{c}", // Escape regex metacharacters
+                _ => c.ToString()
+            });
+        }
+
+        sb.Append("$");
+        return sb.ToString();
+    }
 
     private static Expression GetComparisonExpression(ComparisonOperator op, Expression left, Expression right)
     {
@@ -83,9 +128,12 @@ public static class LinqOperatorProcessor
 
     private static MethodInfo GetMethodInfo(ComparisonOperator comparisonOperator)
     {
+        if (comparisonOperator == ComparisonOperator.Like)
+            throw new InvalidOperationException("LIKE is handled via Regex and should not call GetMethodInfo.");
+
         var method = comparisonOperator switch
         {
-            ComparisonOperator.Contains or ComparisonOperator.Like =>
+            ComparisonOperator.Contains =>
                 typeof(string).GetMethod(nameof(string.Contains), [typeof(string), typeof(StringComparison)]),
 
             ComparisonOperator.StartsWith =>
