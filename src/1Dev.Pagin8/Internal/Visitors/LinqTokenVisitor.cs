@@ -13,6 +13,7 @@ using _1Dev.Pagin8.Internal.Tokenizer.Operators;
 using _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 using _1Dev.Pagin8.Internal.Tokenizer.Tokens.Sort;
 using _1Dev.Pagin8.Internal.Validators;
+using System.Globalization;
 
 namespace _1Dev.Pagin8.Internal.Visitors;
 public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcessor dateProcessor)
@@ -542,12 +543,14 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
             return null;
         }
 
-        if (!targetType.IsNullable()) return Convert.ChangeType(value, targetType);
+        var actualType = targetType.IsNullable() ? Nullable.GetUnderlyingType(targetType)! : targetType;
 
-        var underlyingType = Nullable.GetUnderlyingType(targetType);
-        return underlyingType is null
-            ? throw new InvalidOperationException("Unable to determine nullable underlying type ")
-            : Convert.ChangeType(value, underlyingType);
+        if (actualType == typeof(decimal))
+        {
+            return Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+        }
+
+        return Convert.ChangeType(value, actualType, CultureInfo.InvariantCulture);
     }
 
     private static IQueryable<T> ProcessArrayOperation(ArrayOperationToken token, IQueryable<T> queryable, PropertyInfo propertyInfo, Type elementType)
