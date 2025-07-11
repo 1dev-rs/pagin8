@@ -40,6 +40,7 @@ public sealed class Pagin8StatusCode
     public static readonly Pagin8StatusCode Pagin8_ColumnNotSortable = new(nameof(Pagin8_ColumnNotSortable));
 
     public static readonly Pagin8StatusCode Pagin8_DuplicateArrayType = new(nameof(Pagin8_DuplicateArrayType));
+    public static readonly Pagin8StatusCode Pagin8_PropertyTypeUnknown = new(nameof(Pagin8_PropertyTypeUnknown));
 
     public string Code { get; }
 

@@ -161,21 +161,24 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     public QueryBuilderResult Visit<T>(ArrayOperationToken token, QueryBuilderResult result) where T : class
     {
-        var elementType = GetArrayElementType<T>(token.Field);
+        var elementType = GetArrayElementTypeOrThrow<T>(token.Field, out var propertyType);
 
-        if (elementType.IsPrimitive || elementType == typeof(string))
+        var isSimple =
+            elementType.IsPrimitive ||
+            elementType == typeof(string) ||
+            !typeof(IEnumerable).IsAssignableFrom(typeof(T)); 
+
+        if (isSimple)
         {
-            ProcessSimpleTypeArray(token, result, elementType);
+            ProcessSimpleTypeArray(token, result, propertyType);
         }
         else
         {
-            var columnInfo = GetColumnInfo(elementType, token.Field);
-            ProcessComplexTypeArray(token, result, columnInfo.Type);
+            ProcessComplexTypeArray(token, result, propertyType);
         }
 
         return result;
     }
-
 
     public QueryBuilderResult Visit<T>(DateRangeToken token, QueryBuilderResult result) where T : class
     {
@@ -656,49 +659,65 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         return reservedWords.Contains(columnName.ToUpper()) ? $"\"{columnName.PascalToCamelCase()}\"" : columnName.PascalToCamelCase();
     }
-    
-    private static Type GetArrayElementType<T>(string fieldName)
+
+    private static Type GetArrayElementTypeOrThrow<T>(string fieldName, out Type propertyType)
     {
-        var entityType = typeof(T);
-        var property = entityType.GetProperty(
+        var type = typeof(T);
+        Type? elementType;
+
+        if (type == typeof(string)) // Special case
+        {
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_PropertyTypeUnknown.Code);
+        }
+
+        if (type.IsArray)
+        {
+            elementType = type.GetElementType();
+        }
+        else if (type.IsGenericType && typeof(IEnumerable).IsAssignableFrom(type))
+        {
+            elementType = type.GetGenericArguments().FirstOrDefault();
+        }
+        else if (typeof(IEnumerable).IsAssignableFrom(type) && type != typeof(string))
+        {
+            elementType = type
+                .GetInterfaces()
+                .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                ?.GetGenericArguments().FirstOrDefault();
+        }
+        else
+        {
+            elementType = type;
+        }
+
+        if (elementType == null)
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_PropertyTypeUnknown.Code);
+
+        var property = elementType.GetProperty(
             fieldName,
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase
         );
 
         if (property == null)
-            throw new InvalidOperationException($"Property '{fieldName}' not found on type '{entityType.Name}'.");
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_PropertyTypeUnknown.Code);
 
-        var fieldType = property.PropertyType;
-        Type elementType;
-
-        if (fieldType.IsArray)
-        {
-            elementType = fieldType.GetElementType() ?? throw new InvalidOperationException("Unrecognized element type");
-        }
-        else if (fieldType.IsGenericType && typeof(IEnumerable).IsAssignableFrom(fieldType))
-        {
-            elementType = fieldType.GetGenericArguments()[0];
-        }
-        else
-        {
-            throw new InvalidOperationException($"Property '{fieldName}' is not an array or IEnumerable-compatible.");
-        }
-
+        propertyType = property.PropertyType;
         return elementType;
     }
 
-    private static void ProcessSimpleTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type arrayType)
+
+    private static void ProcessSimpleTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type valueType)
     {
-        var arrayTypeSpecifier = GetPostgresArrayType(arrayType);
-        var valuesFormatted = FormatArrayValues(token.Values, arrayType);
+        var arrayTypeSpecifier = GetPostgresArrayType(valueType);
+        var valuesFormatted = FormatArrayValues(token.Values, valueType);
 
         if (!valuesFormatted.Any())
             return;
 
         var filterSql = token.Operator switch
         {
-            ArrayOperator.Include => $"{token.Field} @> ARRAY[{valuesFormatted}]{arrayTypeSpecifier}",
-            ArrayOperator.Exclude => $"NOT ({token.Field} && ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+            ArrayOperator.Include => $"{token.Field} = ANY(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+            ArrayOperator.Exclude => $"{token.Field} != ALL(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
             _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
         };
 
@@ -711,6 +730,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             result.Builder.Append($" {filterSql:raw}");
         }
     }
+
 
     private static string FormatArrayValues(IEnumerable<object> values, Type type)
     {
@@ -726,7 +746,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         if (!valuesFormatted.Any())
             return;
 
-        var leftHandSideArray = $"ARRAY(SELECT x ->> '{token.Field}' FROM jsonb_array_elements({token.JsonPath}) as x)";
+        var leftHandSideArray = $"ARRAY(SELECT x ->> '{token.Field}' FROM jsonb_array_elements({token.JsonPath}) as x){arrayTypeSpecifier}";
 
         var filterSql = token.Operator switch
         {
@@ -755,7 +775,9 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         if (type == typeof(int))
             return "::int[]";
         if (type == typeof(string))
-            return "::varchar[]";
+            return "::text[]";
+        if (type == typeof(decimal))
+            return "::numeric[]";
         throw new ArgumentException("Unsupported array type.");
     }
 
