@@ -705,32 +705,50 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         return elementType;
     }
 
-
     private static void ProcessSimpleTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type valueType)
     {
-        var arrayTypeSpecifier = GetPostgresArrayType(valueType);
-        var valuesFormatted = FormatArrayValues(token.Values, valueType);
+        var elementType = GetElementTypeOrSelf(valueType);
+        var arrayTypeSpecifier = GetPostgresArrayType(elementType);
+        var valuesFormatted = FormatArrayValues(token.Values, elementType);
 
         if (!valuesFormatted.Any())
             return;
 
+        var isDatabaseFieldArray = valueType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(valueType);
+
         var filterSql = token.Operator switch
         {
-            ArrayOperator.Include => $"{token.Field} = ANY(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
-            ArrayOperator.Exclude => $"{token.Field} != ALL(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+            ArrayOperator.Include when isDatabaseFieldArray =>
+                $"{token.Field}{arrayTypeSpecifier} @> ARRAY[{valuesFormatted}]{arrayTypeSpecifier}",
+            ArrayOperator.Exclude when isDatabaseFieldArray =>
+                $"NOT ({token.Field}{arrayTypeSpecifier} && ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+
+            ArrayOperator.Include =>
+                $"{token.Field} = ANY(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+            ArrayOperator.Exclude =>
+                $"{token.Field} != ALL(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+
             _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
         };
 
         if (token.IsNegated)
-        {
             result.Builder.Append($" NOT ({filterSql:raw})");
-        }
         else
-        {
             result.Builder.Append($" {filterSql:raw}");
-        }
     }
 
+    private static Type GetElementTypeOrSelf(Type type)
+    {
+        if (type == typeof(string)) return type;
+
+        if (type.IsArray)
+            return type.GetElementType()!;
+
+        if (type.IsGenericType && typeof(IEnumerable).IsAssignableFrom(type))
+            return type.GetGenericArguments().First();
+
+        return type;
+    }
 
     private static string FormatArrayValues(IEnumerable<object> values, Type type)
     {
