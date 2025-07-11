@@ -14,7 +14,11 @@ public class NestedFilterTokenizationStrategy(ITokenizer tokenizer) : ITokenizat
     {
         TokenValidator.ValidateNesting(nestingLevel);
 
-        var match = Regex.Match(query, TokenHelper.NestedFilterPattern);
+        var pattern = nestingLevel == 1
+            ? TokenHelper.NestedFilterPattern
+            : TokenHelper.NestedNestedFilterPattern;
+
+        var match = Regex.Match(query, pattern);
         if (!match.Success) throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code);
 
         var field = match.Groups["field"].Value;

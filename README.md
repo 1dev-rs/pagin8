@@ -334,7 +334,7 @@ The response to the above request will include the count of the data without the
 | not.ago   | Date Range | Logical NOT for the `ago` operator                      | `createdDate=not.ago.1w`      | `createdDate.not.ago.1w`                      |
 | not.for   | Date Range | Logical NOT for the `for` operator                                            | `createdDate=not.for.1m`      | `createdDate.not.for.1m`                      |
 | incl/excl | Array      | Includes/excludes all values                            | `name.incl(tag_a,tag_b), name.excl(tag_c)`      | -                      |
-| with      | Nested Filtering | Unfolds nested property                           | `userTags.with=(<innerConditions>)`      | -                      |
+| with      | Nested Filtering | Unfolds nested property                           | `userTags.with=(<innerConditions>)`      | `userTags.with.(<innerConditions>)` |
 
 ## Metadata
 

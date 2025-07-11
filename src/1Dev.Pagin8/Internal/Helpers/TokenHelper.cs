@@ -42,6 +42,7 @@ public static class TokenHelper
     public static string PagingSectionPattern => @"paging=\((.*)\)";
 
     public static string NestedFilterPattern => @"^(?<field>\w+)\.with=\((?<conditions>[\s\S]*)\)(?:\^(?<comment>.+))?$";
+    public static string NestedNestedFilterPattern => @"^(?<field>\w+)\.with.\((?<conditions>[\s\S]*)\)(?:\^(?<comment>.+))?$";
 
     public static string ArrayPattern => $@"^(?<field>[^.=]+)=(?:(?<negation>{EngineDefaults.Config.Negation})\.)?(?<mode>incl|excl)\((?<values>.*)\)(?:\^(?<comment>.+))?$";
 
@@ -168,7 +169,7 @@ public static class TokenHelper
 
     public static bool IsMetadataOperation(string query) => query.StartsWith("metaInclude=", StringComparison.OrdinalIgnoreCase);
 
-    public static bool IsNestedFilterOperation(string query) => Regex.IsMatch(query, NestedFilterPattern);
+    public static bool IsNestedFilterOperation(string query) => Regex.IsMatch(query, NestedFilterPattern) || Regex.IsMatch(query, NestedNestedFilterPattern);
 
     public static bool IsArrayOperation(string query) => Regex.IsMatch(query, ArrayPattern) || Regex.IsMatch(query, NestedArrayPattern);
 }
