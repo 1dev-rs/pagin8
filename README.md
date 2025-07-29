@@ -78,6 +78,7 @@ Pagin8 support a wide range of operators for comparing values and constructing c
 ### Array Operators
 
 -   `in`: In
+-   `<comparison_operator>.in`: Applies comparison to multiple values at once
 -   `not`: Logical NOT ( `not.in` )
 -   `incl`: Includes all values
 -   `excl`: Exclude all values
@@ -306,35 +307,41 @@ The response to the above request will include the count of the data without the
 
 ## Operator summary table
 
-| Operator  | Type      | Description                                             | Example Non-nested Usage       | Example Nested Usage (inside `and()`, `or()`) |
-|-----------|-----------|---------------------------------------------------------|-------------------------------|----------------------------------------------|
-| eq        | Comparison | Equal to                                                | `name=eq.John`                | `name.eq.John`                               |
-| gt        | Comparison | Greater than                                            | `age=gt.30`                   | `age.gt.30`                                  |
-| lt        | Comparison | Less than                                               | `salary=lt.50000`             | `salary.lt.50000`                            |
-| gte       | Comparison | Greater than or equal to                                | `score=gte.80`                | `score.gte.80`                               |
-| lte       | Comparison | Less than or equal to                                   | `count=lte.10`                | `count.lte.10`                               |
-| like      | String     | Like                                                    | `name=like.Joh%`              | `name.like.Joh%`                             |
-| cs        | String     | Contains                                                | `text=cs.apple`               | `text.cs.apple`                              |
-| stw       | String     | Starts With                                             | `address=stw.5th`             | `address.stw.5th`                            |
-| enw       | String     | Ends With                                               | `email=enw.com`               | `email.enw.com`                              |
-| not.*     | String     | Logical NOT prefix for all string operators             | `email=not.like.gmail`        | `email.not.like.gmail`                       |
-| and       | Logical   | Logical AND                                             | `and=(age.gte.18,state.eq.NY)`| `and(age.gte.18,state.eq.NY)`                |
-| or        | Logical   | Logical OR                                              | `or=(grade=eq.A,grade=eq.B)`  | `or(grade=eq.A,grade=eq.B)`                   |
-| not       | Logical   | Logical NOT                                             | `not.and=(grade.gte.6,grade.lte.8)` | `not.and(grade.gte.6,grade.lte.8)`       |
-| in        | Array     | In                                                      | `category=in.(1,2,3)`         | `category.in.(1,2,3)`                         |
-| not.in    | Array     | Logical NOT for the `in` operator                       | `category=not.in.(1,2,3)`      | `category.not.in.(1,2,3)`                     |
-| is        | Boolean   | Is (true or false)                                      | `active=is.true`              | `active.is.true`                             |
-| is.not    | Boolean   | Logical NOT for the `is` operator                       | `active=not.is.true`          | `active.not.is.true`                         |
-| is        | Any       | Is $empty - none                                        | `name=is.$empty`              | `name.is.$empty`                             |
-| is.not    | Any       | Is not $empty - any                                     | `name=is.not.$empty`          | `name.is.not.$empty`                         |
-| ago       | Date Range | Specifies a range from start of previous period until now     | `createdDate=ago.1w`          | `createdDate.ago.1w`                          |
-| for       | Date Range | Specifies a range from now until the end of the next period | `createdDate=for.1y`          | `createdDate.for.1y`                          |
-| ago(exact)       | Date Range | Specifies a range of time ago from the current date     | `createdDate=ago.1we`          | `createdDate.ago.1we`                          |
-| for(exact)       | Date Range | Specifies a range of time forward from the current date | `createdDate=for.1ye`          | `createdDate.for.1ye`                          |
-| not.ago   | Date Range | Logical NOT for the `ago` operator                      | `createdDate=not.ago.1w`      | `createdDate.not.ago.1w`                      |
-| not.for   | Date Range | Logical NOT for the `for` operator                                            | `createdDate=not.for.1m`      | `createdDate.not.for.1m`                      |
-| incl/excl | Array      | Includes/excludes all values                            | `name.incl(tag_a,tag_b), name.excl(tag_c)`      | -                      |
-| with      | Nested Filtering | Unfolds nested property                           | `userTags.with=(<innerConditions>)`      | `userTags.with.(<innerConditions>)` |
+| Operator        | Type             | Description                                                    | Example Non-nested Usage                    | Example Nested Usage (inside `and()`, `or()`)         |
+|-----------------|------------------|----------------------------------------------------------------|---------------------------------------------|-------------------------------------------------------|
+| eq              | Comparison       | Equal to                                                       | `name=eq.John`                              | `name.eq.John`                                        |
+| gt              | Comparison       | Greater than                                                   | `age=gt.30`                                 | `age.gt.30`                                           |
+| lt              | Comparison       | Less than                                                      | `salary=lt.50000`                           | `salary.lt.50000`                                     |
+| gte             | Comparison       | Greater than or equal to                                       | `score=gte.80`                              | `score.gte.80`                                        |
+| lte             | Comparison       | Less than or equal to                                          | `count=lte.10`                              | `count.lte.10`                                        |
+| like            | String           | Like                                                           | `name=like.Joh%`                            | `name.like.Joh%`                                      |
+| cs              | String           | Contains                                                       | `text=cs.apple`                             | `text.cs.apple`                                       |
+| stw             | String           | Starts With                                                    | `address=stw.5th`                           | `address.stw.5th`                                     |
+| enw             | String           | Ends With                                                      | `email=enw.com`                             | `email.enw.com`                                       |
+| not.*           | String           | Logical NOT prefix for all string operators                    | `email=not.like.gmail`                      | `email.not.like.gmail`                                |
+| and             | Logical          | Logical AND                                                    | `and=(age.gte.18,state.eq.NY)`              | `and(age.gte.18,state.eq.NY)`                         |
+| or              | Logical          | Logical OR                                                     | `or=(grade=eq.A,grade=eq.B)`                | `or(grade=eq.A,grade=eq.B)`                           |
+| not             | Logical          | Logical NOT                                                    | `not.and=(grade.gte.6,grade.lte.8)`         | `not.and(grade.gte.6,grade.lte.8)`                    |
+| in              | Array            | In                                                             | `category=in.(1,2,3)`                       | `category.in.(1,2,3)`                                 |
+| not.in          | Array            | Logical NOT for the `in` operator                              | `category=not.in.(1,2,3)`                   | `category.not.in.(1,2,3)`                             |
+| eq.in           | Comparison+Array | Equal to any value(default, same like in)                      | `role=eq.in.(Admin,User)`                   | `and=(role.eq.in.(Admin,User),status.eq.active)`      |
+| not.eq.in       | Comparison+Array | Not equal to any value(not.in)                                 | `type=not.eq.in.(A,B)`                      | `or=(type.not.eq.in.(A,B),type.eq.C)`                 |
+| stw.in          | Comparison+Array | Starts with any value                                          | `name=stw.in.(Adm,Man)`                     | `and=(name.stw.in.(Adm,Man),active.eq.true)`          |
+| not.stw.in      | Comparison+Array | Does not start with any value                                  | `name=not.stw.in.(Test,Temp)`               | `or=(name.not.stw.in.(Test,Temp),status.eq.closed)`   |
+| enw.in          | Comparison+Array | Ends with any value                                            | `file=enw.in.(.pdf,.doc)`                   | `and=(file.enw.in.(.pdf,.doc),archived.eq.false)`     |
+| like.in         | Comparison+Array | Matches any pattern (wildcards supported)                      | `email=like.in.(%@gm%,%@yah%)`              | `or=(email.like.in.(%@gm%,%@yah%),user.eq.John)`      |
+| is              | Boolean          | Is (true or false)                                             | `active=is.true`                            | `active.is.true`                                      |
+| is.not          | Boolean          | Logical NOT for the `is` operator                              | `active=not.is.true`                        | `active.not.is.true`                                  |
+| is              | Any              | Is $empty - none                                               | `name=is.$empty`                            | `name.is.$empty`                                      |
+| is.not          | Any              | Is not $empty - any                                            | `name=is.not.$empty`                        | `name.is.not.$empty`                                  |
+| ago             | Date Range       | Specifies a range from start of previous period until now      | `createdDate=ago.1w`                        | `createdDate.ago.1w`                                  |
+| for             | Date Range       | Specifies a range from now until the end of the next period    | `createdDate=for.1y`                        | `createdDate.for.1y`                                  |
+| ago(exact)      | Date Range       | Specifies a range of time ago from the current date            | `createdDate=ago.1we`                       | `createdDate.ago.1we`                                 |
+| for(exact)      | Date Range       | Specifies a range of time forward from the current date        | `createdDate=for.1ye`                       | `createdDate.for.1ye`                                 |
+| not.ago         | Date Range       | Logical NOT for the `ago` operator                             | `createdDate=not.ago.1w`                    | `createdDate.not.ago.1w`                              |
+| not.for         | Date Range       | Logical NOT for the `for` operator                             | `createdDate=not.for.1m`                    | `createdDate.not.for.1m`                              |
+| incl/excl       | Array            | Includes/excludes all values                                   | `name.incl(tag_a,tag_b), name.excl(tag_c)`  | -                                                     |
+| with            | Nested Filtering | Unfolds nested property                                        | `userTags.with=(<innerConditions>)`         | `userTags.with.(<innerConditions>)`                   |
 
 ## Metadata
 
