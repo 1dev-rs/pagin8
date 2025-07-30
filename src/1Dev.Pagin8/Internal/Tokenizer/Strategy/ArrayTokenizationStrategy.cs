@@ -53,7 +53,10 @@ public class ArrayTokenizationStrategy : ITokenizationStrategy
             ? match.Groups["comment"].Value.Trim()
             : null;
 
-        var arrayToken = new ArrayOperationToken(field, values, operation, isNegated, nestingLevel, comment);
+        var arrayToken = new ArrayOperationToken(field, values, operation, isNegated, nestingLevel, comment)
+        {
+            JsonPath = jsonPath
+        };
 
         return [arrayToken];
     }

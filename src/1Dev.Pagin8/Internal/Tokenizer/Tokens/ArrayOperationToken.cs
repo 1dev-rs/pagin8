@@ -18,7 +18,9 @@ public class ArrayOperationToken : FilterToken
     }
 
     public string Field { get; private set; }
+
     public List<string> Values { get; private set; }
+
     public ArrayOperator Operator { get; private set; }
 
     public bool IsNegated { get; private set; }

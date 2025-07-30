@@ -147,6 +147,17 @@ public static class TokenHelper
         return false;
     }
 
+    public static string NormalizeValue(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return raw;
+
+        if (raw.StartsWith("(") && raw.EndsWith(")"))
+            return raw.Substring(1, raw.Length - 2).Trim();
+
+        return raw;
+    }
+
     public static bool IsComparisonOperation(string query) => Regex.IsMatch(query, ComparisonPattern) || Regex.IsMatch(query, NestedComparisonPattern);
 
     public static bool IsIsOperation(string query) => Regex.IsMatch(query, IsPattern) || Regex.IsMatch(query, NestedIsPattern);
