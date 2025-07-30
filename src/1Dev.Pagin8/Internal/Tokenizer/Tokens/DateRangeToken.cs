@@ -6,14 +6,16 @@ namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
 public class DateRangeToken : FilterToken, INegationAware
 {
-    public DateRangeToken(string field,
+    public DateRangeToken(
+        string field,
         DateRangeOperator @operator,
         int value,
         DateRange range,
         bool exact,
         bool strict,
         int nestingLevel,
-        bool isNegated, string? comment = null)
+        bool isNegated = false, 
+        string? comment = null)
     {
         Field = field;
         Operator = @operator;

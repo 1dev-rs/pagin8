@@ -7,7 +7,7 @@ namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
 public class ArrayOperationToken : FilterToken
 {
-    public ArrayOperationToken(string field, List<string> values, ArrayOperator operationType, bool isNegated, int nestingLevel, string? comment = null)
+    public ArrayOperationToken(string field, List<string> values, ArrayOperator operationType, int nestingLevel, bool isNegated = false, string? comment = null)
     {
         Field = field;
         Values = values;

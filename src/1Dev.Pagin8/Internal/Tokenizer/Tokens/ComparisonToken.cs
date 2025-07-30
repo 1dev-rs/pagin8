@@ -7,7 +7,7 @@ namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
 public class ComparisonToken : FilterToken, INegationAware
 {
-    public ComparisonToken(string field, ComparisonOperator @operator, string value, bool isNegated, int nestingLevel, string? comment = null, string jsonPath = "")
+    public ComparisonToken(string field, ComparisonOperator @operator, string value, int nestingLevel, bool isNegated = false, string? comment = null, string jsonPath = "")
     {
         Field = field;
         Operator = @operator;

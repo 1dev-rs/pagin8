@@ -40,10 +40,10 @@ public class InTokenizationStrategy : ITokenizationStrategy
 
         TokenValidator.ValidateComparison(@operator);
 
-        var inToken = !string.IsNullOrEmpty(comparison) ? 
-            new InToken(field, value, nestingLevel, comment, isNegated, comparison.GetComparisonOperator()) : 
-            new InToken(field, value, nestingLevel, comment, isNegated);
-            
+        var inToken = !string.IsNullOrEmpty(comparison) ?
+            new InToken(field, value, nestingLevel, comparison.GetComparisonOperator(), isNegated, comment) :
+            new InToken(field, value, nestingLevel, isNegated: isNegated, comment: comment);
+
         tokens.Add(inToken);
         return tokens;
     }
@@ -53,5 +53,5 @@ public class InTokenizationStrategy : ITokenizationStrategy
         throw new NotImplementedException();
     }
 
-  
+
 }

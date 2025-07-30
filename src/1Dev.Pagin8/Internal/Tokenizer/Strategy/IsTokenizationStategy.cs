@@ -32,7 +32,7 @@ public class IsTokenizationStrategy : ITokenizationStrategy
         ValidateValue(value, out var isEmptyQuery);
         var isNegated = !string.IsNullOrEmpty(match.Groups["negation"].Value);
 
-        var isToken = new IsToken(field, value, isNegated, isEmptyQuery, nestingLevel, comment);
+        var isToken = new IsToken(field, value, nestingLevel, isNegated, isEmptyQuery, comment);
 
         return [isToken];
     }

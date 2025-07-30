@@ -7,13 +7,13 @@ namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
 public class InToken : FilterToken, INegationAware
 {
-    public InToken(string field, string values, int nestingLevel, string? comment = null, bool isNegated = false, ComparisonOperator comparison = ComparisonOperator.Equals)
+    public InToken(string field, string values,  int nestingLevel, ComparisonOperator comparison = ComparisonOperator.Equals, bool isNegated = false, string ? comment = null )
     {
         Field = field;
         Values = values;
         NestingLevel = nestingLevel;
-        IsNegated = isNegated;
         Comparison = comparison;
+        IsNegated = isNegated;
         Comment = comment;
     }
 

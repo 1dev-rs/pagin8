@@ -29,7 +29,7 @@ public class ArrayTokenizationStrategy : ITokenizationStrategy
             ? match.Groups["comment"].Value.Trim()
             : null;
 
-        var arrayToken =  new ArrayOperationToken(field, values, operation, isNegated, nestingLevel, comment);
+        var arrayToken =  new ArrayOperationToken(field, values, operation, nestingLevel, isNegated, comment);
 
         return [arrayToken];
     }
@@ -53,7 +53,7 @@ public class ArrayTokenizationStrategy : ITokenizationStrategy
             ? match.Groups["comment"].Value.Trim()
             : null;
 
-        var arrayToken = new ArrayOperationToken(field, values, operation, isNegated, nestingLevel, comment)
+        var arrayToken = new ArrayOperationToken(field, values, operation, nestingLevel, isNegated, comment)
         {
             JsonPath = jsonPath
         };

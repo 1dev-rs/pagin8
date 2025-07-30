@@ -30,7 +30,7 @@ public class ComparisonTokenizationStrategy : ITokenizationStrategy
             ? match.Groups["comment"].Value.Trim()
             : null;
 
-        var comparisonToken = new ComparisonToken(field, @operator.GetComparisonOperator(), value, isNegated, nestingLevel, comment);
+        var comparisonToken = new ComparisonToken(field, @operator.GetComparisonOperator(), value, nestingLevel, isNegated, comment);
 
         return [comparisonToken];
     }
@@ -56,7 +56,7 @@ public class ComparisonTokenizationStrategy : ITokenizationStrategy
             ? match.Groups["comment"].Value.Trim()
             : null;
 
-        var comparisonToken = new ComparisonToken(field, @operator.GetComparisonOperator(), value, isNegated, nestingLevel, comment, jsonPath);
+        var comparisonToken = new ComparisonToken(field, @operator.GetComparisonOperator(), value, nestingLevel, isNegated, comment, jsonPath);
 
         return [comparisonToken];
     }
