@@ -7,7 +7,7 @@ namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
 public class InToken : FilterToken, INegationAware
 {
-    public InToken(string field, string values, int nestingLevel, string? comment, bool isNegated = false, ComparisonOperator comparison = ComparisonOperator.Equals)
+    public InToken(string field, string values, int nestingLevel, string? comment = null, bool isNegated = false, ComparisonOperator comparison = ComparisonOperator.Equals)
     {
         Field = field;
         Values = values;

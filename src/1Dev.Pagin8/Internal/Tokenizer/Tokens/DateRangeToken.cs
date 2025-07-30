@@ -13,7 +13,7 @@ public class DateRangeToken : FilterToken, INegationAware
         bool exact,
         bool strict,
         int nestingLevel,
-        bool isNegated, string? comment)
+        bool isNegated, string? comment = null)
     {
         Field = field;
         Operator = @operator;

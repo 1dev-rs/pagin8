@@ -1,5 +1,4 @@
 ﻿using _1Dev.Pagin8.Internal.Configuration;
-using Microsoft.Extensions.Configuration;
 
 namespace Pagin8.Internal.Configuration;
 

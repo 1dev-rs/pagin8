@@ -7,7 +7,7 @@ namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
 public class IsToken : FilterToken, INegationAware
 {
-    public IsToken(string field, string value, bool isNegated, bool isEmptyQuery, int nestingLevel, string? comment)
+    public IsToken(string field, string value, bool isNegated, bool isEmptyQuery, int nestingLevel, string? comment = null)
     {
         Field = field;
         Value = value;

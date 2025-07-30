@@ -7,7 +7,7 @@ namespace _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 
 public class GroupToken : FilterToken, INegationAware
 {
-    public GroupToken(NestingOperator nestingOperator, List<Token> tokens, int nestingLevel, string? comment, bool isNegated = false)
+    public GroupToken(NestingOperator nestingOperator, List<Token> tokens, int nestingLevel, string? comment = null, bool isNegated = false)
     {
         Tokens = tokens;
         NestingLevel = nestingLevel;

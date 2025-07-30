@@ -29,8 +29,8 @@ public class DslConverterToFriendlyTests : Pagin8TestBase
                 new ComparisonToken("status", ComparisonOperator.Equals, "active", false, 2, "Only active"),
                 new GroupToken(NestingOperator.Or, [
                     new ComparisonToken("role", ComparisonOperator.Equals, "admin", false, 3, "Admins only"),
-                    new ComparisonToken("role", ComparisonOperator.Equals, "owner", false, 3, null)
-                ], 1, null)
+                    new ComparisonToken("role", ComparisonOperator.Equals, "owner", false, 3)
+                ], 1)
             ], 1, "User eligibility")
         };
 
