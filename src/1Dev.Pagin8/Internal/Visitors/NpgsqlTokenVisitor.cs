@@ -449,8 +449,11 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         if (!isText)
             return $"{column:raw} {@operator:raw} ({comparison.Value:raw})";
 
-        if (token.Comparison is ComparisonOperator.Equals or ComparisonOperator.In)
-            return $"{column:raw} {@operator:raw} ({comparison.Value:raw})";
+        if (token.Comparison is ComparisonOperator.Equals or ComparisonOperator.In && @operator.Contains("{0}"))
+        {
+            var formatted = string.Format(@operator, comparison.Value);
+            return FormattableStringFactory.Create($"{column} {formatted}");
+        }
 
         var raw = (string)comparison.Value;
 
