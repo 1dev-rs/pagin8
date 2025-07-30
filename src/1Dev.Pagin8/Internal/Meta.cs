@@ -4,6 +4,18 @@ namespace _1Dev.Pagin8.Internal;
 
 public record Meta
 {
+    public static Meta CreateDefault()
+    {
+        return new Meta
+        {
+            ShowCount = false,
+            AdditionalInfoMeta = AdditionalInfoMeta.CreateDefault(),
+            SanitizedQuery = string.Empty,
+            SelectedFields = [],
+            RequestedFields = []
+        };
+    }
+
     public static Meta CreateWithSanitizedQuery(string sanitizedDefaultFilter)
     {
         return new Meta
