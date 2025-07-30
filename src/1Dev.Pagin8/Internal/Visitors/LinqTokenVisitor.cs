@@ -493,7 +493,7 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
                         ? ComparisonOperator.GreaterThan
                         : ComparisonOperator.LessThan;
                 }
-                return GenerateComparisonExpression(new ComparisonToken(currentSortExpression.Field, op, currentSortExpression.LastValue, false, 2, null));
+                return GenerateComparisonExpression(new ComparisonToken(currentSortExpression.Field, op, currentSortExpression.LastValue, 2));
             });
 
             return andConditions.Aggregate(Expression.AndAlso);

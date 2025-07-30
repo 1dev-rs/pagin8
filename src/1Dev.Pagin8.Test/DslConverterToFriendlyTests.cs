@@ -12,7 +12,7 @@ public class DslConverterToFriendlyTests : Pagin8TestBase
     {
         var tokens = new List<Token>
         {
-            new ComparisonToken("status", ComparisonOperator.Equals, "active", false, 1, "Filter for active status")
+            new ComparisonToken("status", ComparisonOperator.Equals, "active", 1, false,"Filter for active status")
         };
 
         var result = DslConverter.ToFriendly(tokens);
@@ -26,12 +26,12 @@ public class DslConverterToFriendlyTests : Pagin8TestBase
         var tokens = new List<Token>
         {
             new GroupToken(NestingOperator.And, [
-                new ComparisonToken("status", ComparisonOperator.Equals, "active", false, 2, "Only active"),
+                new ComparisonToken("status", ComparisonOperator.Equals, "active", 2, false, "Only active"),
                 new GroupToken(NestingOperator.Or, [
-                    new ComparisonToken("role", ComparisonOperator.Equals, "admin", false, 3, "Admins only"),
-                    new ComparisonToken("role", ComparisonOperator.Equals, "owner", false, 3)
+                    new ComparisonToken("role", ComparisonOperator.Equals, "admin", 3, false, "Admins only"),
+                    new ComparisonToken("role", ComparisonOperator.Equals, "owner", 3)
                 ], 1)
-            ], 1, "User eligibility")
+            ], 1, comment:"User eligibility")
         };
 
         var expected =
@@ -65,7 +65,7 @@ public class DslConverterToFriendlyTests : Pagin8TestBase
     {
         var tokens = new List<Token>
         {
-            new InToken("tags", "A,B", 1, "Selected tags")
+            new InToken("tags", "A,B", 1, comment : "Selected tags")
         };
 
         var result = DslConverter.ToFriendly(tokens);
@@ -78,7 +78,7 @@ public class DslConverterToFriendlyTests : Pagin8TestBase
     {
         var tokens = new List<Token>
         {
-            new IsToken("active", "true", true, false, 1, "Must not be active")
+            new IsToken("active", "true", 1, true, false,  "Must not be active")
         };
 
         var result = DslConverter.ToFriendly(tokens);
