@@ -27,12 +27,12 @@ public record Meta
 
     public void SetAdditionalInfo(MetaIncludeToken token)
     {
-        AdditionalInfoMeta = AdditionalInfoMeta.Create(token.Columns);
+        AdditionalInfoMeta = AdditionalInfoMeta.Create(token.Filters, token.Columns, token.Subscriptions);
     }
 
     public bool ShowCount { get; set; }
 
-    public AdditionalInfoMeta AdditionalInfoMeta { get; set; }
+    public AdditionalInfoMeta? AdditionalInfoMeta { get; set; }
 
     public string SanitizedQuery { get; set; } = string.Empty;
 
