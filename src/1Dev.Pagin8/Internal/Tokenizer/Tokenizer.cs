@@ -10,7 +10,11 @@ public class Tokenizer : ITokenizer
     public List<Token> Tokenize(string query, int nestingLevel = 1)
     {
         if (string.IsNullOrEmpty(query)) return [];
-        query = TokenHelper.Normalize(query);
+
+        if (nestingLevel == 1)
+        {
+            query = TokenHelper.Normalize(query);
+        }
 
         var delimiters = TokenHelper.TakeDelimiter(nestingLevel);
         var queryParts = TokenHelper.SplitAtDelimiters(query, delimiters).Where(x=> !string.IsNullOrEmpty(x)).ToArray();
