@@ -24,7 +24,8 @@ public class ComparisonTokenizationStrategy : ITokenizationStrategy
 
         var field = match.Groups["field"].Value;
         var @operator = match.Groups["operator"].Value;
-        var value = match.Groups["val"].Value;
+        var rawValue = match.Groups["val"].Value;
+        var value = TokenHelper.NormalizeValue(rawValue);
         var isNegated = !string.IsNullOrEmpty(match.Groups["negation"].Value);
         var comment = match.Groups["comment"].Success
             ? match.Groups["comment"].Value.Trim()

@@ -18,5 +18,5 @@ public class QueryBuilderParameters
 
     public FormattableString BaseQuery { get; private init; }
 
-    public QueryInputParameters InputParameters { get; private init; }
+    public QueryInputParameters InputParameters { get; init; }
 }
