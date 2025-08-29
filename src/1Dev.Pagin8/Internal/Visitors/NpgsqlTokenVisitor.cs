@@ -340,13 +340,12 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         return procType switch
         {
-            ProcessingType.JsonArray => Wrap($"(x.val ->> '{column}')"),
-            ProcessingType.Json => Wrap($"({jsonPath} ->> '{column}')"),
+            ProcessingType.JsonArray => Wrap($"(x.val ->> '{column}'){GetJsonFieldType(typeCode)}"),
+            ProcessingType.Json => Wrap($"({jsonPath} ->> '{column}'){GetJsonFieldType(typeCode)}"),
             _ => Wrap(column)
         };
 
-        string Wrap(string expr) => isText ? $"generated.transliterate_to_bold_latin({expr})"
-            : $"{expr}{GetJsonFieldType(typeCode)}";
+        string Wrap(string expr) => isText ? $"generated.transliterate_to_bold_latin({expr})" : expr;
     }
 
     private void AppendEmptyQueryConditions(QueryBuilderResult result, Type innerType, IsToken token, string leftHandSide, string negation)
