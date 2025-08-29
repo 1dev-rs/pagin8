@@ -334,16 +334,20 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         }
     }
 
-    private string GetLeftHandSideExpression(ProcessingType procType, string column, string? jsonPath, TypeCode typeCode)
+    private static string GetLeftHandSideExpression(ProcessingType procType, string column, string? jsonPath, TypeCode typeCode)
     {
+        var isText = typeCode is TypeCode.String or TypeCode.Char;
+
         return procType switch
         {
-            ProcessingType.JsonArray => $"(x.val ->> '{column}'){GetJsonFieldType(typeCode)}",
-            ProcessingType.Json => $"({jsonPath} ->> '{column}'){GetJsonFieldType(typeCode)}",
-            _ => column
+            ProcessingType.JsonArray => Wrap($"(x.val ->> '{column}')"),
+            ProcessingType.Json => Wrap($"({jsonPath} ->> '{column}')"),
+            _ => Wrap(column)
         };
-    }
 
+        string Wrap(string expr) => isText ? $"generated.transliterate_to_bold_latin({expr})"
+            : $"{expr}{GetJsonFieldType(typeCode)}";
+    }
 
     private void AppendEmptyQueryConditions(QueryBuilderResult result, Type innerType, IsToken token, string leftHandSide, string negation)
     {
