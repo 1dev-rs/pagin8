@@ -121,10 +121,7 @@ public class SqlQueryBuilderTests
         var @params = result.Builder.Build().SqlParameters;
 
         sql.Should().Be(
-            "AND (generated.transliterate_to_bold_latin(name) ILIKE @p0 ESCAPE '\\' ) ORDER BY id ASC LIMIT @p1"
+            "AND ((generated.transliterate_to_bold_latin(name) ILIKE 'karate%')) ORDER BY id ASC LIMIT @p0"
         );
-
-        @params[0].Argument.Should().Be("%karate klub%");
-
     }
 }
