@@ -462,7 +462,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         var values = raw
             .Trim('(', ')')
-            .Split(',')
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(v => v.Trim('\'', ' '))
             .ToList();
 
@@ -532,7 +532,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var columnInfo = GetColumnInfo(type, token.Field);
         var typeCode = GetTypeCodeForProperty(type, token.Field);
 
-        var values = token.Values.Trim('(', ')').Split(',');
+        var values = token.Values.Trim('(', ')').Split(',', StringSplitOptions.RemoveEmptyEntries);
 
         var formattedValues = values
             .Select(v => FormatComparisonValue(v, typeCode, token.Comparison, columnInfo.IsTranslit))

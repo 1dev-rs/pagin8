@@ -103,4 +103,28 @@ public class SqlQueryBuilderTests
         @params[0].Argument.Should().Be("%karate klub%");
 
     }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateExpectedSql_ForCustomDslWithTrailingComma()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_entity",
+                queryString: "and=%28name.stw.in.%28karate,%29%29", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestEntity>(parameters);
+
+        var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
+
+        sql.Should().Be(
+            "AND (generated.transliterate_to_bold_latin(name) ILIKE @p0 ESCAPE '\\' ) ORDER BY id ASC LIMIT @p1"
+        );
+
+        @params[0].Argument.Should().Be("%karate klub%");
+
+    }
 }
