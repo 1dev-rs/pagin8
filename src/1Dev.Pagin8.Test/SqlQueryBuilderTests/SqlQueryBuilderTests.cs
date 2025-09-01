@@ -45,7 +45,7 @@ public class SqlQueryBuilderTests
         var @params = result.Builder.Build().SqlParameters;
 
         sql.Should().Be(
-            "AND generated.transliterate_to_bold_latin(name) ILIKE @p0 ORDER BY id ASC LIMIT @p1"
+            "AND name ILIKE @p0 ORDER BY id ASC LIMIT @p1"
         );
 
         @params.Should().HaveCount(2);
@@ -70,7 +70,7 @@ public class SqlQueryBuilderTests
         var @params = result.Builder.Build().SqlParameters;
 
         sql.Should().Be(
-            "AND (generated.transliterate_to_bold_latin(name) ILIKE @p0 ESCAPE '\\' OR id > @p1 ) ORDER BY id ASC LIMIT @p2"
+            "AND (name ILIKE @p0 ESCAPE '\\' OR id > @p1 ) ORDER BY id ASC LIMIT @p2"
         );
 
         @params.Should().HaveCount(3);
@@ -97,7 +97,7 @@ public class SqlQueryBuilderTests
         var @params = result.Builder.Build().SqlParameters;
 
         sql.Should().Be(
-            "AND (generated.transliterate_to_bold_latin(name) ILIKE @p0 ESCAPE '\\' ) ORDER BY id ASC LIMIT @p1"
+            "AND (name ILIKE @p0 ESCAPE '\\' ) ORDER BY id ASC LIMIT @p1"
         );
 
         @params[0].Argument.Should().Be("%karate klub%");
@@ -121,7 +121,7 @@ public class SqlQueryBuilderTests
         var @params = result.Builder.Build().SqlParameters;
 
         sql.Should().Be(
-            "AND ((generated.transliterate_to_bold_latin(name) ILIKE 'karate%')) ORDER BY id ASC LIMIT @p0"
+            "AND ((name ILIKE 'karate%')) ORDER BY id ASC LIMIT @p0"
         );
     }
 }
