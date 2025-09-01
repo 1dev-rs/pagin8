@@ -155,7 +155,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             HandleRegularFilter(token, result, columnInfo);
         }
 
-        result.Builder.Append($")");
+        
         return result;
     }
 
@@ -374,26 +374,37 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var formattedArrayQuery = FormattableStringFactory.Create(BaseJsonArrayQuery.ToString().Replace("/**field**/", token.Field));
         var innerBuilder = new QueryBuilder(result.Builder.DbConnection, formattedArrayQuery);
         var innerResult = new QueryBuilderResult { Builder = innerBuilder };
-
+        if (token.Tokens.Any())
+        {
+            innerResult.Builder.Append($" {EngineDefaults.Config.QueryJoinKeyword:raw} ");
+        }
         AppendChildTokens(token, innerResult, columnInfo.Type);
 
         result.Builder.Append(innerBuilder.Build());
+        result.Builder.Append($")");
     }
 
     private void HandleRegularFilter(NestedFilterToken token, QueryBuilderResult result, ColumnInfo columnInfo)
     {
         result.Builder.Append($"(");
         AppendChildTokens(token, result, columnInfo.Type);
+        result.Builder.Append($")");
     }
 
     private void AppendChildTokens(NestedFilterToken token, QueryBuilderResult result, Type innerType)
     {
+        var first = true;
+
         foreach (var child in token.Tokens)
         {
-            result.Builder.Append($" AND ");
+            
+            if (!first) result.Builder.Append($" {EngineDefaults.Config.QueryJoinKeyword:raw} ");
+            first = false;
+
             DynamicVisit(child, result, innerType);
         }
     }
+
     private static FormattableString BaseJsonArrayQuery => @$"
             SELECT 1
             FROM (
@@ -787,7 +798,13 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     private static string GetJsonFieldType(TypeCode typeCode)
     {
-        return typeCode.IsNumericType() ? "::int" : "::text";
+        return typeCode switch
+        {
+            TypeCode.Byte or TypeCode.SByte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64 or TypeCode.Int16
+                or TypeCode.Int32 or TypeCode.Int64 or TypeCode.Double or TypeCode.Single => "::int",
+            TypeCode.Decimal => "::numeric",
+            _ => "::text"
+        };
     }
 
     private static string GetPostgresArrayType(Type type)

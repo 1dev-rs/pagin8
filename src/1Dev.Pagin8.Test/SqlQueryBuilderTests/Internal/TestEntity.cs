@@ -11,3 +11,10 @@ public class TestEntity
     public decimal Amount { get; set; }
     public DateTime CreatedDate { get; set; }
 }
+
+public class TestNestedEntity
+{
+    [Key]
+    public int Id { get; set; }
+    public TestEntity? TestEntity { get; set; }
+}

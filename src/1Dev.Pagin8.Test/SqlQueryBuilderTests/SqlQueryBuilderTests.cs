@@ -7,6 +7,7 @@ using _1Dev.Pagin8.Internal.Tokenizer;
 using _1Dev.Pagin8.Internal.Visitors;
 using _1Dev.Pagin8.Test.SqlQueryBuilderTests.Internal;
 using FluentAssertions;
+using System.Collections.Generic;
 
 namespace _1Dev.Pagin8.Test.SqlQueryBuilderTests;
 
@@ -53,6 +54,60 @@ public class SqlQueryBuilderTests
         @params[0].Argument.Should().Be("john");
         @params[1].Argument.Should().Be(1_000_000);
     }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateExpectedSql_ForNestedObjectComparison()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_nested_entity",
+                queryString: "testEntity.with=(name.stw.test)", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestNestedEntity>(parameters);
+
+        var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
+
+        sql.Should().Be(
+            "AND ((testEntity ->> 'name')::text ILIKE @p0 ESCAPE '\\' ) ORDER BY id ASC LIMIT @p1"
+        );
+
+        @params.Should().HaveCount(2);
+
+        @params[0].Argument.Should().Be("test%");
+        @params[1].Argument.Should().Be(1_000_000);
+    }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateExpectedSql_ForChainedNestedObjectComparison()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_nested_entity",
+                queryString: "testEntity.with=(name.stw.test,amount.gt.500)", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestNestedEntity>(parameters);
+
+        var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
+
+        sql.Should().Be(
+            "AND ((testEntity ->> 'name')::text ILIKE @p0 ESCAPE '\\'  AND (testEntity ->> 'amount')::numeric > @p1 ) ORDER BY id ASC LIMIT @p2"
+        );
+
+        @params.Should().HaveCount(3);
+
+        @params[0].Argument.Should().Be("test%");
+        @params[1].Argument.Should().Be(500m);
+        @params[2].Argument.Should().Be(1_000_000);
+    }
+
     [Fact]
     public void BuildSqlQuery_ShouldGenerateExpectedSql_ForGroupDsl()
     {
