@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -593,7 +594,11 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             TypeCode.Double => double.TryParse(value, out var doubleValue) ? doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
             TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
             TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToLowerBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
-            TypeCode.Decimal => decimal.TryParse(value, out var decimalValue) ? decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
+            TypeCode.Decimal =>
+                decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var d) ||
+                decimal.TryParse(value, NumberStyles.Number, CultureInfo.CurrentCulture, out d)
+                    ? d
+                    : throw new ArgumentException($"Cannot format value {value} as Decimal"),
             _ => throw new ArgumentException($"Cannot format values for TypeCode {typeCode}")
         };
     }
