@@ -9,5 +9,7 @@ public interface ITokenizationService
 
     string Standardize<T>(string input, bool isDefault = false) where T : class;
 
+    string MergeAndStandardize<T>(string schema1, string schema2, bool isDefault = false) where T : class;
+
     string Standardize(IEnumerable<Token> tokens);
 }

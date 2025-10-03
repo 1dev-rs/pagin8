@@ -56,6 +56,20 @@ public class TokenizationService(
         var orderedTokens = EnsureOrderByPriority(tokens).ToList();
         return tokenizer.RevertToQueryString(orderedTokens);
     }
+
+    public string MergeAndStandardize<T>(
+        string? schema1,
+        string? schema2,
+        bool isDefault = false) where T : class
+    {
+        var tokens1 = tokenizer.Tokenize(schema1 ?? string.Empty);
+        var tokens2 = tokenizer.Tokenize(schema2 ?? string.Empty);
+
+        var mergedTokens = CompareAndMergeTokens(tokens1, tokens2);
+        var standardized = Standardize(mergedTokens);
+
+        return standardized;
+    }
     #endregion
 
     #region Private methods
