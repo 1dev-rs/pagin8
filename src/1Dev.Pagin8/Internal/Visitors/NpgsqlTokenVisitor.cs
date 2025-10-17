@@ -620,7 +620,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             TypeCode.Double => double.TryParse(value, out var doubleValue) ? (double?)doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
             TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (bool?)boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
             TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
-            TypeCode.Decimal => decimal.TryParse(value, out var decimalValue) ? (decimal?)decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
+            TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? (decimal?)decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
             _ => throw new ArgumentException($"Cannot format values for TypeCode {typeCode}")
         };
     }
