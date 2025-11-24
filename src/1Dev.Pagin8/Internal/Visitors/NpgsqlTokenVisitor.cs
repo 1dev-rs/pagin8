@@ -462,9 +462,22 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         if (token.Comparison is ComparisonOperator.Equals or ComparisonOperator.In && @operator.Contains("{0}"))
         {
-            var formatted = string.Format(@operator, comparison.Value);
+            string formatted;
+
+            if (token.IsNegated)
+            {
+                formatted = @operator.Contains("{1}")
+                    ? string.Format(@operator, column, comparison.Value) 
+                    : string.Format(@operator, column);                    
+
+                return FormattableStringFactory.Create($"{formatted}");
+            }
+
+            formatted = string.Format(@operator, comparison.Value);
+
             return FormattableStringFactory.Create($"{column} {formatted}");
         }
+
 
         var raw = (string)comparison.Value;
 
