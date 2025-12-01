@@ -132,8 +132,7 @@ public static class TokenHelper
             query = query.TrimStart('?');
         }
 
-        //return HttpUtility.UrlDecode(query);
-        return query;
+        return HttpUtility.UrlDecode(query);
     }
 
 
