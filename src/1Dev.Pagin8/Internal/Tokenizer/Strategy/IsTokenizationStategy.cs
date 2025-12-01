@@ -9,7 +9,12 @@ namespace _1Dev.Pagin8.Internal.Tokenizer.Strategy;
 
 public class IsTokenizationStrategy : ITokenizationStrategy
 {
-    private const string EmptyPlaceholder = "$empty";
+    private static readonly string[] EmptyPlaceholderAliases =
+    {
+        "$empty",        
+        "%24empty"       
+    };
+
 
     public List<Token> Tokenize(string query, int nestingLevel = 1)
     {
@@ -53,7 +58,8 @@ public class IsTokenizationStrategy : ITokenizationStrategy
         {
             isEmptyQuery = false;
         }
-        else if (value.Equals(EmptyPlaceholder, StringComparison.InvariantCultureIgnoreCase))
+        else if (EmptyPlaceholderAliases
+                 .Any(p => value.Equals(p, StringComparison.InvariantCultureIgnoreCase)))
         {
             isEmptyQuery = true;
         }
