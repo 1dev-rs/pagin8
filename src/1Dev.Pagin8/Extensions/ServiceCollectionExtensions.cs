@@ -27,8 +27,9 @@ public static class ServiceCollectionExtensions
             {
                 DefaultPerPage = 50,
                 MaxItemsPerPage = 5000,
-                MaxSafeItemCount = 1_000_000
-            }
+                MaxSafeItemCount = 1_000_000,
+            },
+            MaxRelativeDateYears = 20
         };
 
         // Apply user overrides

@@ -6,4 +6,6 @@ public record ServiceConfiguration
     public int MaxNestingLevel { get; set; }
 
     public PagingSettings PagingSettings { get; set; } = new();
+
+    public int MaxRelativeDateYears { get; set; } = 20;
 }

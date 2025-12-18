@@ -1,8 +1,12 @@
-﻿using _1Dev.Pagin8.Internal.Tokenizer.Operators;
+﻿using _1Dev.Pagin8.Internal.Exceptions.Base;
+using _1Dev.Pagin8.Internal.Exceptions.StatusCodes;
+using _1Dev.Pagin8.Internal.Tokenizer.Operators;
+using Internal.Configuration;
 
 namespace _1Dev.Pagin8.Internal.DateProcessor;
 public class DateProcessor : IDateProcessor
 {
+
     public (DateTime startDate, DateTime endDate) GetStartAndEndOfRelativeDate(DateTime currentDate, int amount, DateRange unit, bool goBackwards, bool exact = false, bool strict = false) =>
         unit switch
         {
@@ -15,6 +19,9 @@ public class DateProcessor : IDateProcessor
 
     private static (DateTime startDate, DateTime endDate) CalculateDayRange(DateTime currentDate, int amount, bool goBackwards, bool exact, bool strict)
     {
+        var maxDays = Pagin8Runtime.Config.MaxRelativeDateYears * 365;
+        ValidateRelativeRange(amount, maxDays);
+        
         if (exact)
         {
             var targetDate = goBackwards ? currentDate.AddDays(-amount) : currentDate.AddDays(amount);
@@ -35,6 +42,9 @@ public class DateProcessor : IDateProcessor
 
     private static (DateTime startDate, DateTime endDate) CalculateWeekRange(DateTime currentDate, int amount, bool goBackwards, bool exact, bool strict)
     {
+        var maxWeeks = Pagin8Runtime.Config.MaxRelativeDateYears * 52;
+        ValidateRelativeRange(amount, maxWeeks);
+
         var targetDate = goBackwards
             ? currentDate.AddDays(-amount * 7)
             : currentDate.AddDays(amount * 7);
@@ -61,6 +71,9 @@ public class DateProcessor : IDateProcessor
 
     private static (DateTime startDate, DateTime endDate) CalculateMonthRange(DateTime currentDate, int amount, bool goBackwards, bool exact, bool strict)
     {
+        var maxMonths = Pagin8Runtime.Config.MaxRelativeDateYears * 12;
+        ValidateRelativeRange(amount, maxMonths);
+
         var targetDate = goBackwards
             ? currentDate.AddMonths(-amount)
             : currentDate.AddMonths(amount);
@@ -87,6 +100,8 @@ public class DateProcessor : IDateProcessor
 
     private static (DateTime startDate, DateTime endDate) CalculateYearRange(DateTime currentDate, int amount, bool goBackwards, bool exact, bool strict)
     {
+        ValidateRelativeRange(amount, Pagin8Runtime.Config.MaxRelativeDateYears);
+
         var targetDate = goBackwards
             ? currentDate.AddYears(-amount)
             : currentDate.AddYears(amount);
@@ -125,4 +140,13 @@ public class DateProcessor : IDateProcessor
     {
         return System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
     }
+
+    private static void ValidateRelativeRange(int amount, int maxAllowed)
+    {
+        if (amount <= maxAllowed)
+            return;
+
+        throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidDateRange.Code);
+    }
+
 }
