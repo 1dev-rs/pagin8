@@ -814,6 +814,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     {
         return typeCode switch
         {
+            TypeCode.Boolean => "::boolean",
             TypeCode.Byte or TypeCode.SByte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64 or TypeCode.Int16
                 or TypeCode.Int32 or TypeCode.Int64 or TypeCode.Double or TypeCode.Single => "::int",
             TypeCode.Decimal => "::numeric",
