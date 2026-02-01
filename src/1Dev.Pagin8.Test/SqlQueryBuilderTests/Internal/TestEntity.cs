@@ -10,6 +10,7 @@ public class TestEntity
     public string Name { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public DateTime CreatedDate { get; set; }
+    public DateTime ModifiedDate { get; set; }
 }
 
 public class TestNestedEntity

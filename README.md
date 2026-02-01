@@ -1,8 +1,28 @@
-
-
 # Pagin8
 
-Pagin8 is a C# library that provides a simple way to generate SQL queries. It allows you to build complex queries with ease and provides a fluent interface that is easy to read and understand. The filtering syntax is inspired by PostgREST server, and supports a wide range of operators for comparing values and constructing complex expressions.
+**PostgREST-inspired filtering & pagination for .NET + PostgreSQL**
+
+Pagin8 is a C# library that provides a simple and powerful way to build SQL queries with filtering, sorting, and pagination. The URL-based filtering syntax is inspired by PostgREST, making it intuitive and expressive for building RESTful APIs.
+
+## ✨ Features
+
+- 🎯 **PostgREST-inspired syntax** - Intuitive URL-based filtering
+- 🚀 **Zero-boilerplate** - 5 lines per repository, 1 line DI setup
+- 🔍 **Rich operators** - 30+ operators for comparison, strings, arrays, dates
+- 📊 **Smart pagination** - Cursor-based with sorting and count
+- 🎨 **Column selection** - Return only fields you need
+- ⚡ **High performance** - Built on Dapper + PostgreSQL
+- 🏗️ **Clean code** - Repository pattern included
+
+## 🎯 Quick Links
+
+- [Installation](#-installation) - Get started in 2 minutes
+- [Quick Start](#-quick-start---backend-integration) - Working API in 5 steps
+- [Query Examples](#querying-syntax) - Real-world filtering
+- [All Operators](#supported-operators) - Complete reference
+- [Pagination](#paging-operator-for-pagination) - Cursor-based paging
+
+---
 
 ## Querying Syntax
 
@@ -345,8 +365,9 @@ The response to the above request will include the count of the data without the
 
 ## Metadata
 
-The metadata feature allows you to retrieve additional information about filters, columns, and subscriptions when using the library's pagination functionality. By including the `metaInclude` token in the URL, you can request the metadata in the form data.
-Available options are `filters`, `columns` and `subscriptions`.
+Get additional information about your queries by including `metaInclude` in the URL. This helps build dynamic UIs and track schema changes.
+
+**Available options:** `filters`, `columns`
 
 ### Additional Meta Information in the Response
 
@@ -368,12 +389,12 @@ When there is no `metaInclude` token, where will be basic metadata in additional
 ```json
 "additionalInformation": {
     "filtersMeta": {
-      "activeFilter": "select=id,name,schema,activity,viewCode,subscriptionDate,countOk,countErrored,lastErrorMessage,lastOkDate,lastErrorDate&paging=(sort(subscriptionDate.desc,id.asc),limit.50,count.false)",
+      "activeFilter": "status=eq.active&paging=(sort(createdAt.desc,id.asc),limit.50,count.false)",
       "tableKey": "id",
-      "hash": "BB731880"
+      "hash": "A1B2C3D4"
     },
     "columnMeta": {
-      "hash": "7DB628CD"
+      "hash": "E5F6G7H8"
     }
   }
 ```
@@ -426,86 +447,430 @@ When `metaInclude=columns` token is provided, a full column metadata response is
 ```json
 "additionalInformation": {
     "filtersMeta": {
-      "activeFilter": "metaInclude=filters",
+      "activeFilter": "metaInclude=columns",
       "tableKey": "id",
-      "hash": "BB731880"
+      "hash": "A1B2C3D4"
     },
     "columnMeta": {
       "data": [
-        {
-          "name": "activity",
-          "type": "int"
-        },
-        {
-          "name": "countErrored",
-          "type": "int"
-        },
-        {
-          "name": "countOk",
-          "type": "int"
-        },
-        {
-          "name": "id",
-          "type": "int"
-        },
-        {
-          "name": "lastErrorDate",
-          "type": "DateTime"
-        },
-        {
-          "name": "lastErrorMessage",
-          "type": "string"
-        },
-        {
-          "name": "lastOkDate",
-          "type": "DateTime"
-        },
-        {
-          "name": "name",
-          "type": "string"
-        },
-        {
-          "name": "subscriptionDate",
-          "type": "DateTime"
-        },
-        {
-          "name": "viewCode",
-          "type": "string"
-        }
+        { "name": "id", "type": "int" },
+        { "name": "name", "type": "string" },
+        { "name": "email", "type": "string" },
+        { "name": "status", "type": "string" },
+        { "name": "createdAt", "type": "DateTime" },
+        { "name": "price", "type": "decimal" }
       ],
-      "hash": "7DB628CD"
+      "hash": "E5F6G7H8"
     }
   }
 ```
 
-#### Subscriptions meta
+---
 
-When the `metaInclude=subscriptions` token is present, the response will include the following metadata in additional information in **subscriptionsMeta** key:
-
-- **countActive**: The total number of active subscriptions within the specified context. This figure indicates subscriptions that are currently active and engaged by the user.
-- **countInactive**: The total number of inactive subscriptions within the specified context. This count reflects subscriptions that are currently not active or dormant from the user's perspective.
+**💡 Use Case:** Build smart frontends that cache metadata and only refresh when hash changes.
 
 
-```json
-"additionalInformation": {
-    "filtersMeta": {
-      "activeFilter": "metaInclude=filters",
-      "tableKey": "id",
-      "hash": "BB731880"
-    },
-    "columnMeta": {
-      "hash": "7DB628CD"
-    },
-    "subscriptionsMeta": {
-      "countActive": 0,
-      "countInactive": 0
+## 📦 Installation
+
+### NuGet Packages
+
+```bash
+# Core library (query building, filtering syntax)
+dotnet add package 1Dev.Pagin8
+
+# Backend extensions (ASP.NET Core + Dapper + PostgreSQL)
+dotnet add package 1Dev.Pagin8.Extensions.Backend
+```
+
+---
+
+## 🚀 Quick Start - Backend Integration
+
+### 1️⃣ Setup (Program.cs)
+
+```csharp
+using _1Dev.Pagin8.Extensions.Backend.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Pagin8 core
+builder.Services.AddPagin8(config =>
+{
+    config.DatabaseType = DatabaseType.PostgreSql;
+});
+
+// Add Backend Extensions (ONE line setup!)
+builder.Services.AddPagin8Backend(
+    builder.Configuration.GetConnectionString("DefaultConnection")!
+);
+
+var app = builder.Build();
+app.Run();
+```
+
+### 2️⃣ Create Repository (5 lines!)
+
+```csharp
+using _1Dev.Pagin8.Extensions.Backend.Base;
+using _1Dev.Pagin8.Extensions.Backend.Interfaces;
+
+public class ProductRepository : FilteredRepositoryBase<ProductDto>
+{
+    protected override string ViewName => "vw_products";
+    protected override string? DefaultFilter => "isDeleted=eq.false";
+
+    public ProductRepository(IFilterProvider filterProvider)
+        : base(filterProvider) { }
+
+    // ✅ GetFilteredAsync() is inherited - zero boilerplate!
+}
+```
+
+### 3️⃣ Create Service
+
+```csharp
+using _1Dev.Pagin8.Extensions.Backend.Models;
+
+public class ProductService
+{
+    private readonly IProductRepository _repository;
+
+    public async Task<PagedResults<ProductDto>> GetFilteredAsync(FilteredDataQuery query)
+    {
+        return await _repository.GetFilteredAsync(query);
     }
-  }
-  ```
+}
+```
 
-It is important to note that by leveraging the metadata feature, you can retrieve comprehensive information about filters, columns and subscriptions, track the changes in the filters and columns for improved data handling and client-side awareness.
+### 4️⃣ Create Controller
 
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using _1Dev.Pagin8.Extensions.Backend.Extensions;
 
-## .NET Client Instructions
+[ApiController]
+[Route("api/[controller]")]
+public class ProductsController : ControllerBase
+{
+    private readonly IProductService _service;
 
-// TODO:
+    [HttpGet]
+    public async Task<IActionResult> Get()
+    {
+        var query = HttpContext.ToFilteredDataQuery(); // ✨ Extension method!
+        var result = await _service.GetFilteredAsync(query);
+
+        return Ok(new
+        {
+            data = result.Data,
+            totalRows = result.TotalRows
+        });
+    }
+}
+```
+
+### 5️⃣ Test Your API
+
+```bash
+# Basic filtering
+GET /api/products?name=cs.laptop&price=gte.500
+
+# With sorting and pagination
+GET /api/products?category=eq.electronics&paging=(sort(price.asc),limit.20,count.true)
+
+# Complex queries
+GET /api/products?and=(price.gte.100,status.eq.active)&createdAt=ago.30d
+```
+
+**Response:**
+```json
+{
+  "data": [
+    { "id": 1, "name": "Laptop Pro", "price": 1299.99, "category": "electronics" },
+    { "id": 2, "name": "Laptop Air", "price": 999.99, "category": "electronics" }
+  ],
+  "totalRows": 42
+}
+```
+
+---
+
+## 🎯 What You Get
+
+| Component | What It Does | Code Required |
+|-----------|-------------|---------------|
+| **DI Setup** | Registers all services (connection, query builder, filter provider) | **1 line** |
+| **Repository** | Full CRUD + filtering per entity | **5 lines** |
+| **Controller** | HTTP → Query conversion | **Extension method** |
+| **Infrastructure** | Connection pooling, Dapper integration, query building | **0 lines (in NuGet)** |
+| **Maintenance** | Library updates, bug fixes, new features | **NuGet update** |
+
+### Real Impact
+- ✅ **5 minutes** from install to working API
+- ✅ **Type-safe** - No raw SQL strings
+- ✅ **Testable** - Mock `IFilterProvider` for unit tests
+- ✅ **Production-ready** - Connection pooling, prepared statements
+- ✅ **Extensible** - Override base methods, add custom logic
+
+---
+
+## 📚 Backend Extensions - Components
+
+### Models
+
+#### `PagedResults<T>`
+Generic paged results model returned from queries.
+
+```csharp
+public record PagedResults<T>
+{
+    public IEnumerable<T> Data { get; init; }
+    public int TotalRows { get; init; }
+    public Meta? Meta { get; set; } // Pagin8 metadata
+}
+```
+
+#### `FilteredDataQuery`
+Query parameters for filtered data requests.
+
+```csharp
+public record FilteredDataQuery
+{
+    public string QueryString { get; init; }
+    public string DefaultQuery { get; init; }
+    public bool IgnoreLimit { get; init; }
+
+    public static FilteredDataQuery Create(string? queryString, bool ignoreLimit = false);
+}
+```
+
+### Base Classes
+
+#### `FilteredRepositoryBase<TResponse>`
+Inherit from this class to get filtering support automatically.
+
+```csharp
+public abstract class FilteredRepositoryBase<TResponse> : IFilteredRepository<TResponse>
+{
+    protected abstract string ViewName { get; }
+    protected virtual string? DefaultFilter => null;
+
+    // ✅ These methods are inherited automatically:
+    Task<PagedResults<TResponse>> GetFilteredAsync(FilteredDataQuery query);
+    Task<int> GetFilteredCountAsync(FilteredDataQuery query);
+}
+```
+
+### Extension Methods
+
+#### `HttpContext.ToFilteredDataQuery()`
+Converts HTTP request query string to `FilteredDataQuery`.
+
+```csharp
+[HttpGet]
+public async Task<IActionResult> Get()
+{
+    var query = HttpContext.ToFilteredDataQuery();
+    // or with default filter
+    var query = HttpContext.ToFilteredDataQuery("status=eq.active");
+}
+```
+
+### Advanced Usage
+
+#### Custom Connection Factory
+
+```csharp
+public class MyConnectionFactory : IDbConnectionFactory
+{
+    public IDbConnection Create()
+    {
+        // Your custom connection logic
+        return new NpgsqlConnection(connectionString);
+    }
+}
+
+// Register it
+builder.Services.AddPagin8Backend<MyConnectionFactory>();
+```
+
+#### Multiple Default Filters
+
+```csharp
+public class ProductRepository : FilteredRepositoryBase<ProductDto>
+{
+    protected override string ViewName => "vw_products";
+    protected override string? DefaultFilter => "and=(isDeleted.eq.false,isActive.eq.true)";
+}
+```
+
+#### Working with Views
+
+```csharp
+// Create a PostgreSQL view
+CREATE VIEW vw_products AS
+SELECT
+    p.id,
+    p.name,
+    p.price,
+    c.name as category_name,
+    p.created_at
+FROM products p
+LEFT JOIN categories c ON p.category_id = c.id;
+
+// Use it in your repository
+public class ProductRepository : FilteredRepositoryBase<ProductDto>
+{
+    protected override string ViewName => "vw_products";
+}
+```
+
+---
+
+## 🔧 Extending the Library
+
+Pagin8 is designed to be extended for your specific needs. Here are common extension patterns:
+
+### Adding Custom Metadata
+
+You can extend the metadata system to include project-specific information:
+
+```csharp
+// 1. Extend PagedResults
+public record CustomPagedResults<T> : PagedResults<T>
+{
+    public MyCustomMeta? CustomMetadata { get; set; }
+}
+
+// 2. Create custom repository base
+public abstract class MyRepositoryBase<T> : FilteredRepositoryBase<T>
+    where T : class
+{
+    public override async Task<PagedResults<T>> GetFilteredAsync(FilteredDataQuery query)
+    {
+        var result = await base.GetFilteredAsync(query);
+
+        // Add your custom logic
+        if (result is CustomPagedResults<T> custom)
+        {
+            custom.CustomMetadata = await LoadCustomMetadata();
+        }
+
+        return result;
+    }
+
+    protected abstract Task<MyCustomMeta> LoadCustomMetadata();
+}
+```
+
+### Adding Repository-Level Logic
+
+Override base methods to add caching, logging, or business rules:
+
+```csharp
+public class ProductRepository : FilteredRepositoryBase<ProductDto>
+{
+    private readonly IMemoryCache _cache;
+    private readonly ILogger<ProductRepository> _logger;
+
+    protected override string ViewName => "vw_products";
+
+    public override async Task<PagedResults<ProductDto>> GetFilteredAsync(FilteredDataQuery query)
+    {
+        _logger.LogInformation("Filtering products with query: {Query}", query.QueryString);
+
+        // Add caching
+        var cacheKey = $"products_{query.QueryString}";
+        if (_cache.TryGetValue(cacheKey, out PagedResults<ProductDto> cached))
+            return cached;
+
+        var result = await base.GetFilteredAsync(query);
+        _cache.Set(cacheKey, result, TimeSpan.FromMinutes(5));
+
+        return result;
+    }
+}
+```
+
+### Custom Query Transformations
+
+Intercept and modify queries before execution:
+
+```csharp
+public class TenantAwareRepository : FilteredRepositoryBase<MyDto>
+{
+    private readonly ITenantContext _tenantContext;
+
+    protected override string ViewName => "my_table";
+
+    public override async Task<PagedResults<MyDto>> GetFilteredAsync(FilteredDataQuery query)
+    {
+        // Automatically add tenant filter
+        var tenantId = _tenantContext.CurrentTenantId;
+        var modifiedQuery = query with
+        {
+            DefaultQuery = $"tenantId=eq.{tenantId}"
+        };
+
+        return await base.GetFilteredAsync(modifiedQuery);
+    }
+}
+```
+
+### Adding Global Query Interceptors
+
+Register middleware to intercept all queries:
+
+```csharp
+public class QueryAuditInterceptor : IFilterProvider
+{
+    private readonly IFilterProvider _inner;
+    private readonly IAuditService _audit;
+
+    public QueryAuditInterceptor(FilterProvider inner, IAuditService audit)
+    {
+        _inner = inner;
+        _audit = audit;
+    }
+
+    public async Task<PagedResults<TResponse>> GetAsync<TResponse>(
+        string viewName,
+        FilteredDataQuery query) where TResponse : class
+    {
+        await _audit.LogQuery(viewName, query.QueryString);
+        return await _inner.GetAsync<TResponse>(viewName, query);
+    }
+}
+
+// Register it
+builder.Services.Decorate<IFilterProvider, QueryAuditInterceptor>();
+```
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+---
+
+## 📮 Support
+
+- **Issues:** [GitHub Issues](https://github.com/1dev-rs/pagin8/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/1dev-rs/pagin8/discussions)
+
+---
+
+Made with ❤️ by [1DEV](https://github.com/1dev-rs)

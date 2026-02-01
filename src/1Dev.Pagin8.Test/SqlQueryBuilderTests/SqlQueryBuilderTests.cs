@@ -179,4 +179,58 @@ public class SqlQueryBuilderTests
             "AND ((name ILIKE 'karate%')) ORDER BY id ASC LIMIT @p0"
         );
     }
+
+    [Theory]
+    [InlineData("2025-12-11", 2025, 12, 11, 0, 0, 0, 0)]
+    [InlineData("2025-12-11T14:30:00", 2025, 12, 11, 14, 30, 0, 0)]
+    [InlineData("2025-12-11T14:30:00.123", 2025, 12, 11, 14, 30, 0, 123)]
+    public void BuildSqlQuery_ShouldAccept_AllowedDateFormats(
+        string input,
+        int y, int m, int d, int h, int min, int s, int ms)
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_entity",
+                queryString: $"modifiedDate=gt.{input}",
+                string.Empty,
+                true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestEntity>(parameters);
+        var sqlParams = result.Builder.Build().SqlParameters;
+
+        sqlParams.Should().HaveCount(2);
+        sqlParams[0].Argument.Should().BeOfType<DateTime>();
+
+        sqlParams[0].Argument.Should().Be(
+            new DateTime(y, m, d, h, min, s, ms)
+        );
+    }
+
+    [Theory]
+    [InlineData("11.12.2025")]
+    [InlineData("12/11/2025")]
+    [InlineData("Mon,+08+Dec+2025+23:00:00+GMT")]
+    [InlineData("08 Dec 2025 23:00:00")]
+    [InlineData("2025/12/11")]
+    public void BuildSqlQuery_ShouldReject_DisallowedDateFormats(string input)
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_entity",
+                queryString: $"modifiedDate=gt.{input}",
+                string.Empty,
+                true
+            )
+        };
+
+        Action act = () => _sut.BuildSqlQuery<TestEntity>(parameters);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+
 }
