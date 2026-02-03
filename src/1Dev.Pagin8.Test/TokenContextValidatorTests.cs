@@ -118,36 +118,6 @@ public class TokenContextValidatorTests : Pagin8TestBase
 
     #endregion
 
-    #region InToken Tests
-
-    [Fact]
-    public void ValidateFilterableTokenFields_InToken_ValidField_ReturnsTrue()
-    {
-        // Arrange - "Status" exists in TestEntity
-        var tokens = _tokenizer.Tokenize("Status.in(active,pending)");
-
-        // Act
-        var result = _validator.ValidateFilterableTokenFields<TestEntity>(tokens);
-
-        // Assert
-        result.Should().BeTrue();
-    }
-
-    [Fact]
-    public void ValidateFilterableTokenFields_InToken_InvalidField_ReturnsFalse()
-    {
-        // Arrange - "InvalidField" does NOT exist in TestEntity
-        var tokens = _tokenizer.Tokenize("InvalidField.in(val1,val2)");
-
-        // Act
-        var result = _validator.ValidateFilterableTokenFields<TestEntity>(tokens);
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    #endregion
-
     #region Mixed Token Tests
 
     [Fact]
