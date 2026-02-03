@@ -231,6 +231,4 @@ public class SqlQueryBuilderTests
 
         act.Should().Throw<ArgumentException>();
     }
-
-
 }

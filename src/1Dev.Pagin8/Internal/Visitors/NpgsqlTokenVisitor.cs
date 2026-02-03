@@ -36,7 +36,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         var query = BuildQuery(leftHandSide, typeCode, token, isText, comparison);
         TryHandleNullColumns(comparison.Column, token, ref query);
-        result.Builder.AppendFormattableString(query);
+        result.Builder += query;
 
         return result;
     }
@@ -47,10 +47,10 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         if (groupToken.IsNegated)
         {
-            builder.AppendFormattableString($"{EngineDefaults.Config.Negation:raw} ");
+            builder += $"{EngineDefaults.Config.Negation:raw} ";
         }
 
-        builder.AppendFormattableString($"(");
+        builder += $"(";
 
         if (!string.IsNullOrEmpty(groupToken.JsonPath))
         {
@@ -65,11 +65,11 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
             if (QueryBuilderHelper.HasNextToken(index, groupToken.Tokens))
             {
-                builder.AppendFormattableString($"{groupToken.GetSqlOperator():raw}");
+                builder += $"{groupToken.GetSqlOperator():raw}";
             }
         }
 
-        builder.Append($")");
+        builder += $")";
 
         return result;
     }
@@ -86,7 +86,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var query = GenerateInQuery(column, isText, token, comparison);
 
         TryHandleNullColumns(column, token, ref query);
-        result.Builder.AppendFormattableString(query);
+        result.Builder += query;
 
         return result;
     }
@@ -200,7 +200,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             $"{leftHandSide:raw} {token.GetSqlOperator():raw} {startDate:yyyy-MM-dd HH: mm: ss.fffffff} AND {endDate:yyyy-MM-dd HH: mm: ss.fffffff}";
 
         TryHandleNullColumns(leftHandSide, token, ref query);
-        result.Builder.AppendFormattableString(query);
+        result.Builder += query;
 
         return result;
     }
@@ -212,7 +212,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var typeCode = GetTypeCodeForProperty(innerType, token.Field);
         var negation = token.IsNegated ? EngineDefaults.Config.Negation : "";
 
-        result.Builder.Append($"(");
+        result.Builder += $"(";
 
         var formattedName = TryFormatColumnName(columnInfo.Name);
         var leftHandSide = GetLeftHandSideExpression(procType, formattedName, token.JsonPath, typeCode);
@@ -226,13 +226,13 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             AppendValueQueryCondition(result, token, leftHandSide, negation);
         }
 
-        result.Builder.Append($")");
+        result.Builder += $")";
         return result;
     }
 
     public QueryBuilderResult Visit<T>(LimitToken token, QueryBuilderResult result) where T : class
     {
-        result.Builder.Append($"LIMIT {token.Value}");
+        result.Builder += $"LIMIT {token.Value}";
         return result;
     }
 
@@ -249,18 +249,18 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     private void BuildSortConditions<T>(QueryBuilder builder, IReadOnlyList<SortExpression> sortExpressions) where T : class
     {
-        InterpolatedSqlBuilderOptions.DefaultOptions.ReuseIdenticalParameters = true;
+        // Parameter reuse should be configured at QueryBuilder creation, not via global state
         if (sortExpressions.All(x => string.IsNullOrEmpty(x.LastValue))) return;
 
-        builder.Append($"(");
+        builder += $"(";
         for (var i = 0; i < sortExpressions.Count; i++)
         {
             if (i > 0)
             {
-                builder.Append($" OR ");
+                builder += $" OR ";
             }
 
-            builder.Append($"(");
+            builder += $"(";
 
             for (var j = 0; j <= i; j++)
             {
@@ -270,7 +270,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
                 if (j > 0)
                 {
-                    builder.Append($" AND");
+                    builder += $" AND";
                 }
 
                 var formattedValue = FormatColumnValue<T>(currentField, currentSortExpression.LastValue);
@@ -279,7 +279,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
                 if (formattedValue is null && @operator is "=")
                 {
-                    builder.Append($" {formattedName:raw} IS NULL");
+                    builder += $" {formattedName:raw} IS NULL";
                 }
                 else
                 {
@@ -289,30 +289,30 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
                     if (columnInfo.IsNullAllowed)
                     {
                         var coalesce = GetCoalesceMinValue(typeCode);
-                        builder.AppendFormattableString($" COALESCE({formattedName:raw}, {coalesce}) {@operator:raw} COALESCE({formattedValue}, {coalesce})");
+                        builder += $" COALESCE({formattedName:raw}, {coalesce}) {@operator:raw} COALESCE({formattedValue}, {coalesce})";
                     }
                     else
                     {
-                        builder.AppendFormattableString($" {formattedName:raw} {@operator:raw} {formattedValue}");
+                        builder += $" {formattedName:raw} {@operator:raw} {formattedValue}";
                     }
                 }
             }
 
-            builder.Append($")");
+            builder += $")";
         }
-        builder.Append($")");
+        builder += $")";
     }
 
     private void BuildSortOrder<T>(QueryBuilder builder, SortToken token) where T : class
     {
-        builder.Append($"ORDER BY ");
+        builder += $"ORDER BY ";
 
         var added = false;
         for (var index = 0; index < token.SortExpressions.Count; index++)
         {
             var expression = token.SortExpressions[index];
 
-            if (index > 0 && added) builder.Append($",");
+            if (index > 0 && added) builder += $",";
 
             var columnInfo = GetColumnInfo<T>(expression.Field, useTranslit: false);
 
@@ -324,11 +324,11 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             {
                 var coalesce = GetCoalesceMinValue(typeCode);
                 var nullPosition = expression.SortOrder == SortOrder.Ascending ? "NULLS FIRST" : "NULLS LAST";
-                builder.Append($"COALESCE({formattedName:raw}, {coalesce}) {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw} {nullPosition:raw}");
+                builder += $"COALESCE({formattedName:raw}, {coalesce}) {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw} {nullPosition:raw}";
             }
             else
             {
-                builder.Append($"{formattedName:raw} {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw}");
+                builder += $"{formattedName:raw} {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw}";
             }
 
             added = true;
@@ -351,45 +351,45 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var isText = IsText(typeCode);
 
         FormattableString query = $"{leftHandSide:raw} IS {negation:raw} NULL";
-        result.Builder.AppendFormattableString(query);
+        result.Builder += query;
 
         if (!isText) return;
 
         var join = token.IsNegated ? " AND " : " OR ";
-        result.Builder.Append($"{join:raw}");
+        result.Builder += $"{join:raw}";
 
         query = $"{leftHandSide:raw} {(token.IsNegated ? "<>" : "="):raw} ''";
-        result.Builder.AppendFormattableString(query);
+        result.Builder += query;
     }
 
     private static void AppendValueQueryCondition(QueryBuilderResult result, IsToken token, string leftHandSide, string negation)
     {
         var value = bool.Parse(token.Value);
         FormattableString query = $"{leftHandSide:raw} IS {negation:raw} {value:raw}";
-        result.Builder.AppendFormattableString(query);
+        result.Builder += query;
     }
 
     private void HandleJsonArrayFilter(NestedFilterToken token, QueryBuilderResult result, ColumnInfo columnInfo)
     {
-        result.Builder.Append($"EXISTS (");
+        result.Builder += $"EXISTS (";
         var formattedArrayQuery = FormattableStringFactory.Create(BaseJsonArrayQuery.ToString().Replace("/**field**/", token.Field));
         var innerBuilder = new QueryBuilder(result.Builder.DbConnection, formattedArrayQuery);
         var innerResult = new QueryBuilderResult { Builder = innerBuilder };
         if (token.Tokens.Any())
         {
-            innerResult.Builder.Append($" {EngineDefaults.Config.QueryJoinKeyword:raw} ");
+            innerResult.Builder += $" {EngineDefaults.Config.QueryJoinKeyword:raw} ";
         }
         AppendChildTokens(token, innerResult, columnInfo.Type);
 
-        result.Builder.Append(innerBuilder.Build());
-        result.Builder.Append($")");
+        result.Builder += innerBuilder.Build();
+        result.Builder += $")";
     }
 
     private void HandleRegularFilter(NestedFilterToken token, QueryBuilderResult result, ColumnInfo columnInfo)
     {
-        result.Builder.Append($"(");
+        result.Builder += $"(";
         AppendChildTokens(token, result, columnInfo.Type);
-        result.Builder.Append($")");
+        result.Builder += $")";
     }
 
     private void AppendChildTokens(NestedFilterToken token, QueryBuilderResult result, Type innerType)
@@ -399,7 +399,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         foreach (var child in token.Tokens)
         {
             
-            if (!first) result.Builder.Append($" {EngineDefaults.Config.QueryJoinKeyword:raw} ");
+            if (!first) result.Builder += $" {EngineDefaults.Config.QueryJoinKeyword:raw} ";
             first = false;
 
             DynamicVisit(child, result, innerType);
@@ -783,9 +783,9 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
         };
 
         if (token.IsNegated)
-            result.Builder.Append($" NOT ({filterSql:raw})");
+            result.Builder += $" NOT ({filterSql:raw})";
         else
-            result.Builder.Append($" {filterSql:raw}");
+            result.Builder += $" {filterSql:raw}";
     }
 
     private static Type GetElementTypeOrSelf(Type type)
@@ -826,11 +826,11 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
 
         if (token.IsNegated)
         {
-            result.Builder.Append($"NOT ({filterSql:raw})");
+            result.Builder += $"NOT ({filterSql:raw})";
         }
         else
         {
-            result.Builder.Append($"{filterSql:raw}");
+            result.Builder += $"{filterSql:raw}";
         }
     }
 

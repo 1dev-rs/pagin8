@@ -89,6 +89,8 @@ public static class TokenHelper
                     currentPart.Append(c);
                     break;
                 case ')':
+                    if (stack.Count == 0)
+                        throw new Pagin8Exception(Pagin8StatusCode.Pagin8_MalformedQuery.Code);
                     stack.Pop();
                     currentPart.Append(c);
                     break;
@@ -153,7 +155,11 @@ public static class TokenHelper
             return raw;
 
         if (raw.StartsWith("(") && raw.EndsWith(")"))
+        {
+            if (raw.Length < 2)
+                return string.Empty;
             return raw.Substring(1, raw.Length - 2).Trim();
+        }
 
         return raw;
     }

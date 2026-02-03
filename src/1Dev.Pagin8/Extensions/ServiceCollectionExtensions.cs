@@ -37,6 +37,11 @@ public static class ServiceCollectionExtensions
 
         ValidateConfig(config);
 
+        // Configure InterpolatedSql parameter reuse (thread-safe - set once at startup)
+        // When enabled, identical parameter values reuse the same @p0 instead of creating @p0, @p1, etc.
+        // This is an optimization for queries with repeated values (e.g., keyset pagination)
+        InterpolatedSql.SqlBuilders.InterpolatedSqlBuilderOptions.DefaultOptions.ReuseIdenticalParameters = true;
+
         // Store config for runtime/static access
         Pagin8Runtime.Initialize(config);
 

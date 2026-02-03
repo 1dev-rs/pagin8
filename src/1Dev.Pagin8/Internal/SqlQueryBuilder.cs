@@ -61,7 +61,7 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
 
     private static void WrapQueryAsJsonIfNeeded(QueryInputParameters input, QueryBuilderResult result)
     {
-        if (input.IsJson && result.Builder != null!)
+        if (input.IsJson && result.Builder is not null)
         {
             result.Builder = BuildJsonWrapper(result.Builder, input.CtePrefix, input.IsCount);
         }
@@ -84,7 +84,7 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
     {
         if(showCount is null) return;
         result = tokenVisitor.Visit<T>(showCount, result);
-        result.Builder = null!; // Skip fetching data
+        result.Builder = null; // Skip fetching data when only count is requested
     }
 
     private void BuildQueryFromTokens<T>(QueryBuilderResult result, IEnumerable<Token> tokens, bool isCount)

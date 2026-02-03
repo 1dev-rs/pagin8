@@ -35,6 +35,7 @@ public sealed class Pagin8StatusCode
     public static readonly Pagin8StatusCode Pagin8_ExceededMaxItems = new(nameof(Pagin8_ExceededMaxItems));
     public static readonly Pagin8StatusCode Pagin8_GeneralError = new(nameof(Pagin8_GeneralError));
     public static readonly Pagin8StatusCode Pagin8_MissingQuery = new(nameof(Pagin8_MissingQuery));
+    public static readonly Pagin8StatusCode Pagin8_MalformedQuery = new(nameof(Pagin8_MalformedQuery));
     public static readonly Pagin8StatusCode Pagin8_MissingSortExpressions = new(nameof(Pagin8_MissingSortExpressions));
     public static readonly Pagin8StatusCode Pagin8_ColumnNotExist = new(nameof(Pagin8_ColumnNotExist));
     public static readonly Pagin8StatusCode Pagin8_ColumnNotSortable = new(nameof(Pagin8_ColumnNotSortable));
