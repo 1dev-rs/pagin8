@@ -20,3 +20,4 @@ artifacts/
 .vs/
 TestResult.xml
 .claude/settings.local.json
+CLAUDE.md
