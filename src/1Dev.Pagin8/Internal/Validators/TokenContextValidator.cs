@@ -22,7 +22,7 @@ public class TokenContextValidator(IPagin8MetadataProvider metadataProvider, ILo
             InToken inToken => ValidateAndLog<T>(CanBeFiltered<T>(inToken.Field), inToken.Field),
             IsToken isToken => ValidateAndLog<T>(CanBeFiltered<T>(isToken.Field), isToken.Field),
             ArrayOperationToken arrayOperationToken => ValidateAndLog<T>(CanBeFiltered<T>(arrayOperationToken.Field), arrayOperationToken.Field),
-            NestedFilterToken nestedFilterToken => ValidateAndLog<T>(CanBeFiltered<T>(nestedFilterToken.Field), nestedFilterToken.Field) && ValidateFilterableTokenFields<T>(nestedFilterToken.Tokens),
+            NestedFilterToken nestedFilterToken => ValidateAndLog<T>(CanBeFiltered<T>(nestedFilterToken.Field), nestedFilterToken.Field),
             PagingToken { Sort: { } sort } => sort.SortExpressions.All(x => ValidateAndLog<T>(CanBeSorted<T>(x.Field), x.Field)),
             SelectToken selectToken => selectToken.Fields.All(field => ValidateAndLog<T>(CanBeSelected<T>(field), field)),
             _ => true
