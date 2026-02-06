@@ -443,43 +443,31 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
     private static FormattableString GenerateInQuery(string column, bool isText, InToken token, DbComparison comparison)
     {
         var @operator = token.GetSqlOperator(isText);
-        var comparisonOperator = SqlOperatorProcessor.GetSqlOperator(token.Comparison, isText, token.IsNegated);
 
+        // For non-text fields (numbers, dates, etc.), use standard IN operator
         if (!isText)
-            return $"{column:raw} {@operator:raw} ({comparison.Value:raw})";
-
-        if (token.Comparison is ComparisonOperator.Equals or ComparisonOperator.In && @operator.Contains("{0}"))
         {
-            string formatted;
-
             if (token.IsNegated)
-            {
-                formatted = @operator.Contains("{1}")
-                    ? string.Format(@operator, column, comparison.Value)
-                    : string.Format(@operator, column);
-
-                return FormattableStringFactory.Create($"{formatted}");
-            }
-
-            formatted = string.Format(@operator, comparison.Value);
-
-            return FormattableStringFactory.Create($"{column} {formatted}");
+                return $"{column:raw} NOT IN ({comparison.Value:raw})";
+            
+            return $"{column:raw} IN ({comparison.Value:raw})";
         }
 
+        // For text fields with IN operator
+        // The operator is now correct from SqlOperatorConstants (IN or NOT IN)
+        // We just need to format the values properly for SQL Server
         var raw = (string)comparison.Value;
-
         var values = raw
             .Trim('(', ')')
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(v => v.Trim('\'', ' '))
             .ToList();
 
-        var conditions = values
-            .Select(v => $"{column} {comparisonOperator} '{v}'");
-
-        var combined = string.Join(" OR ", conditions);
-
-        return FormattableStringFactory.Create($"({combined})");
+        // SQL Server IN syntax: column IN ('value1', 'value2', ...)
+        // or: column NOT IN ('value1', 'value2', ...)
+        var valueList = string.Join(", ", values.Select(v => $"'{v.ToLower()}'"));
+        
+        return FormattableStringFactory.Create($"{column:raw} {@operator:raw} ({valueList:raw})");
     }
 
     private void MapPlaceholderToKey<T>(IReadOnlyCollection<SortExpression> sortExpressions) where T : class

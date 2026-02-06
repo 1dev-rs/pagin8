@@ -48,9 +48,9 @@ public static class SqlOperatorConstants
     public static Dictionary<ComparisonOperator, string> CaseSensitiveComparisonSqlMap => new()
     {
         { ComparisonOperator.Equals, GetLikeOperator() },
-        { ComparisonOperator.In, Pagin8Runtime.Config.DatabaseType == DatabaseType.SqlServer 
-            ? "{0} LIKE ANY (ARRAY[{1}])" 
-            : "ILIKE ANY (ARRAY[{0}])" }
+        // Note: For IN operator with text values, SQL Server uses standard IN syntax
+        // The actual value formatting is handled in the visitor (SqlServerTokenVisitor or NpgsqlTokenVisitor)
+        { ComparisonOperator.In, "IN" }
     };
 
     public static readonly Dictionary<string, NestingOperator> QueryNestingMap = new()
@@ -117,9 +117,9 @@ public static class SqlOperatorConstants
     public static Dictionary<ComparisonOperator, string> NegatedCaseSensitiveOperatorSqlMap => new()
     {
         { ComparisonOperator.Equals, GetNotLikeOperator() },
-        { ComparisonOperator.In, Pagin8Runtime.Config.DatabaseType == DatabaseType.SqlServer
-            ? "NOT ({0} LIKE ANY (ARRAY[{1}]))"
-            : "NOT ({0} ILIKE ANY (ARRAY[{1}]))" }
+        // Note: For NOT IN operator with text values, SQL Server uses standard NOT IN syntax
+        // The actual value formatting is handled in the visitor (SqlServerTokenVisitor or NpgsqlTokenVisitor)
+        { ComparisonOperator.In, "NOT IN" }
     };
 
     public static readonly Dictionary<string, ArrayOperator> ArrayOperatorMap = new()
