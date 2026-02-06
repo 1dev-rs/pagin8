@@ -2,5 +2,6 @@
 
 public enum DatabaseType
 {
-    PostgreSql = 0
+    PostgreSql = 0,
+    SqlServer = 1
 }

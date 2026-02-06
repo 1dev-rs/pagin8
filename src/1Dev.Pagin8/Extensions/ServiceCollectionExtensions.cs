@@ -82,6 +82,9 @@ public static class ServiceCollectionExtensions
             case DatabaseType.PostgreSql:
                 services.AddTransient<ISqlTokenVisitor, NpgsqlTokenVisitor>();
                 break;
+            case DatabaseType.SqlServer:
+                services.AddTransient<ISqlTokenVisitor, SqlServerTokenVisitor>();
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(dbType), dbType, null);
         }

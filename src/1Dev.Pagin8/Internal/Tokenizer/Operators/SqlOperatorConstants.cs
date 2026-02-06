@@ -1,4 +1,6 @@
-﻿using _1Dev.Pagin8.Internal.Tokenizer.Tokens.Sort;
+﻿using _1Dev.Pagin8.Internal.Configuration;
+using _1Dev.Pagin8.Internal.Tokenizer.Tokens.Sort;
+using Internal.Configuration;
 
 // ReSharper disable InconsistentNaming
 
@@ -21,26 +23,34 @@ public static class SqlOperatorConstants
 
     public static readonly Dictionary<ComparisonOperator, string> ReverseQueryComparisonMap = QueryComparisonMap.ToDictionary(kv => kv.Value, kv => kv.Key);
 
-    public static readonly Dictionary<ComparisonOperator, string> ComparisonSqlMap = new()
+    private static string GetLikeOperator() => 
+        Pagin8Runtime.Config.DatabaseType == DatabaseType.SqlServer ? "LIKE" : "ILIKE";
+
+    private static string GetNotLikeOperator() => 
+        Pagin8Runtime.Config.DatabaseType == DatabaseType.SqlServer ? "NOT LIKE" : "NOT ILIKE";
+
+    public static Dictionary<ComparisonOperator, string> ComparisonSqlMap => new()
     {
         { ComparisonOperator.Equals, "=" },
         { ComparisonOperator.GreaterThan, ">" },
         { ComparisonOperator.GreaterThanOrEqual, ">=" },
         { ComparisonOperator.LessThan, "<" },
         { ComparisonOperator.LessThanOrEqual, "<=" },
-        { ComparisonOperator.Like, "ILIKE" },
+        { ComparisonOperator.Like, GetLikeOperator() },
         { ComparisonOperator.Is, "IS" },
-        { ComparisonOperator.StartsWith, "ILIKE" },
-        { ComparisonOperator.EndsWith, "ILIKE" },
-        { ComparisonOperator.Contains, "ILIKE" },
+        { ComparisonOperator.StartsWith, GetLikeOperator() },
+        { ComparisonOperator.EndsWith, GetLikeOperator() },
+        { ComparisonOperator.Contains, GetLikeOperator() },
         { ComparisonOperator.In, "IN" },
         { ComparisonOperator.Between, "BETWEEN" }
     };
 
-    public static readonly Dictionary<ComparisonOperator, string> CaseSensitiveComparisonSqlMap = new()
+    public static Dictionary<ComparisonOperator, string> CaseSensitiveComparisonSqlMap => new()
     {
-        { ComparisonOperator.Equals, "ILIKE" },
-        { ComparisonOperator.In, "ILIKE ANY (ARRAY[{0}])" }
+        { ComparisonOperator.Equals, GetLikeOperator() },
+        { ComparisonOperator.In, Pagin8Runtime.Config.DatabaseType == DatabaseType.SqlServer 
+            ? "{0} LIKE ANY (ARRAY[{1}])" 
+            : "ILIKE ANY (ARRAY[{0}])" }
     };
 
     public static readonly Dictionary<string, NestingOperator> QueryNestingMap = new()
@@ -92,22 +102,24 @@ public static class SqlOperatorConstants
         { 'y', 365 },
     };
 
-    public static readonly Dictionary<ComparisonOperator, string> NegatedOperatorSqlMap = new()
+    public static Dictionary<ComparisonOperator, string> NegatedOperatorSqlMap => new()
     {
         { ComparisonOperator.Equals, "!=" },
-        { ComparisonOperator.Like, "NOT ILIKE" },
-        { ComparisonOperator.StartsWith, "NOT ILIKE" },
-        { ComparisonOperator.EndsWith, "NOT ILIKE" },
-        { ComparisonOperator.Contains, "NOT ILIKE" },
+        { ComparisonOperator.Like, GetNotLikeOperator() },
+        { ComparisonOperator.StartsWith, GetNotLikeOperator() },
+        { ComparisonOperator.EndsWith, GetNotLikeOperator() },
+        { ComparisonOperator.Contains, GetNotLikeOperator() },
         { ComparisonOperator.Is, "IS NOT" },
         { ComparisonOperator.In, "NOT IN" },
         { ComparisonOperator.Between, "NOT BETWEEN" },
     };
 
-    public static readonly Dictionary<ComparisonOperator, string> NegatedCaseSensitiveOperatorSqlMap = new()
+    public static Dictionary<ComparisonOperator, string> NegatedCaseSensitiveOperatorSqlMap => new()
     {
-        { ComparisonOperator.Equals, "NOT ILIKE" },
-        { ComparisonOperator.In, "NOT ({0} ILIKE ANY (ARRAY[{1}]))" }
+        { ComparisonOperator.Equals, GetNotLikeOperator() },
+        { ComparisonOperator.In, Pagin8Runtime.Config.DatabaseType == DatabaseType.SqlServer
+            ? "NOT ({0} LIKE ANY (ARRAY[{1}]))"
+            : "NOT ({0} ILIKE ANY (ARRAY[{1}]))" }
     };
 
     public static readonly Dictionary<string, ArrayOperator> ArrayOperatorMap = new()
