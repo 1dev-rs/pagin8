@@ -11,13 +11,17 @@ using System.Collections.Generic;
 
 namespace _1Dev.Pagin8.Test.SqlQueryBuilderTests;
 
-public class SqlQueryBuilderTests
+[Collection("PostgreSQL QueryBuilder Tests")]
+public class PostgreSqlQueryBuilderTests
 {
     private readonly ISqlQueryBuilder _sut;
 
-    public SqlQueryBuilderTests()
+    public PostgreSqlQueryBuilderTests()
     {
-        Pagin8TestBootstrap.Init();
+        // Ensure PostgreSQL configuration for these tests
+        // This is needed because SQL Server integration tests may run first and set different configuration
+        PostgreSqlTestBootstrap.Init();
+        
         var tokenizer = new Tokenizer(); 
         var contextValidator = new PassThroughContextValidator(); 
         var metadataProvider = new Pagin8MetadataProvider(new MetadataProvider());

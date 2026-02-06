@@ -12,21 +12,16 @@ using Internal.Configuration;
 
 namespace _1Dev.Pagin8.Test.SqlQueryBuilderTests;
 
+[Collection("SQL Server QueryBuilder Tests")]
 public class SqlServerQueryBuilderTests
 {
-    private ISqlQueryBuilder CreateSqlServerQueryBuilder()
+    private readonly ISqlQueryBuilder _sut;
+
+    public SqlServerQueryBuilderTests()
     {
-        Pagin8Runtime.Initialize(new ServiceConfiguration
-        {
-            MaxNestingLevel = 5,
-            PagingSettings = new PagingSettings
-            {
-                DefaultPerPage = 50,
-                MaxItemsPerPage = 5000,
-                MaxSafeItemCount = 1_000_000
-            },
-            DatabaseType = DatabaseType.SqlServer
-        });
+        // Ensure SQL Server configuration for these tests
+        // This is needed because PostgreSQL tests may run first and set different configuration
+        SqlServerTestBootstrap.Init();
 
         var tokenizer = new Tokenizer();
         var contextValidator = new PassThroughContextValidator();
@@ -36,14 +31,12 @@ public class SqlServerQueryBuilderTests
         var tokenizationService = new TokenizationService(tokenizer, contextValidator, metadataProvider);
         var tokenVisitor = new SqlServerTokenVisitor(metadataProvider, dateProcessor);
 
-        return new SqlQueryBuilder(tokenizationService, tokenVisitor);
+        _sut = new SqlQueryBuilder(tokenizationService, tokenVisitor);
     }
 
     [Fact]
     public void BuildSqlQuery_ShouldGenerateExpectedSql_ForSimpleEquality()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -70,8 +63,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldGenerateExpectedSql_ForNestedObjectComparison()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -98,8 +89,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldGenerateExpectedSql_ForChainedNestedObjectComparison()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -127,8 +116,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldGenerateExpectedSql_ForGroupDsl()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -156,8 +143,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldGenerateExpectedSql_ForInOperator()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -182,8 +167,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldHaveOrderBy_WhenNoSortSpecified()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -203,8 +186,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldHandleSimpleQuery()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -223,8 +204,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldHandleDateComparisons()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -244,8 +223,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldUseFetchNext_WithSimpleQuery()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -266,8 +243,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldHandleSpecialCharactersInLike()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -286,8 +261,6 @@ public class SqlServerQueryBuilderTests
     [Fact]
     public void BuildSqlQuery_ShouldHandleNegation()
     {
-        var _sut = CreateSqlServerQueryBuilder();
-
         var parameters = new QueryBuilderParameters
         {
             InputParameters = QueryInputParameters.Create(
@@ -301,5 +274,101 @@ public class SqlServerQueryBuilderTests
         var sql = result.Builder.AsSql().Sql;
 
         sql.Should().Contain("IS NULL");
+    }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateExpectedSql_ForCustomDsl()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_entity",
+                queryString: "and=%28name.cs.%28karate+klub%29%29", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestEntity>(parameters);
+
+        var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
+
+        sql.Should().Be(
+            "AND (name LIKE @p0 ESCAPE '\\' ) ORDER BY id ASC OFFSET 0 ROWS FETCH NEXT @p1 ROWS ONLY"
+        );
+
+        @params[0].Argument.Should().Be("%karate klub%");
+    }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateExpectedSql_ForCustomDslWithTrailingComma()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_entity",
+                queryString: "and=%28name.stw.in.%28karate,%29%29", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestEntity>(parameters);
+
+        var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
+
+        sql.Should().Be(
+            "AND (name IN ('karate%')) ORDER BY id ASC OFFSET 0 ROWS FETCH NEXT @p0 ROWS ONLY"
+        );
+    }
+
+    [Theory]
+    [InlineData("2025-12-11", 2025, 12, 11, 0, 0, 0, 0)]
+    [InlineData("2025-12-11T14:30:00", 2025, 12, 11, 14, 30, 0, 0)]
+    [InlineData("2025-12-11T14:30:00.123", 2025, 12, 11, 14, 30, 0, 123)]
+    public void BuildSqlQuery_ShouldAccept_AllowedDateFormats(
+        string input,
+        int y, int m, int d, int h, int min, int s, int ms)
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_entity",
+                queryString: $"modifiedDate=gt.{input}",
+                string.Empty,
+                true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestEntity>(parameters);
+        var sqlParams = result.Builder.Build().SqlParameters;
+
+        sqlParams.Should().HaveCount(2);
+        sqlParams[0].Argument.Should().BeOfType<DateTime>();
+
+        sqlParams[0].Argument.Should().Be(
+            new DateTime(y, m, d, h, min, s, ms)
+        );
+    }
+
+    [Theory]
+    [InlineData("11.12.2025")]
+    [InlineData("12/11/2025")]
+    [InlineData("Mon,+08+Dec+2025+23:00:00+GMT")]
+    [InlineData("08 Dec 2025 23:00:00")]
+    [InlineData("2025/12/11")]
+    public void BuildSqlQuery_ShouldReject_DisallowedDateFormats(string input)
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_entity",
+                queryString: $"modifiedDate=gt.{input}",
+                string.Empty,
+                true
+            )
+        };
+
+        Action act = () => _sut.BuildSqlQuery<TestEntity>(parameters);
+
+        act.Should().Throw<ArgumentException>();
     }
 }
