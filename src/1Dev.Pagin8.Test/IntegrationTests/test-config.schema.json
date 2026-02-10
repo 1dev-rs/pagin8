@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Pagin8 Test Configuration",
+  "description": "Configuration for Pagin8 integration tests with Testcontainers",
+  "type": "object",
+  "properties": {
+    "testConfiguration": {
+      "type": "object",
+      "description": "Main test configuration settings",
+      "properties": {
+        "datasetSize": {
+          "type": "integer",
+          "description": "Number of products to generate for tests",
+          "minimum": 100,
+          "maximum": 10000000,
+          "default": 5000
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Random seed for reproducible test data generation",
+          "default": 42
+        },
+        "enablePerformanceMetrics": {
+          "type": "boolean",
+          "description": "Enable performance metrics collection and reporting",
+          "default": true
+        },
+        "databases": {
+          "type": "object",
+          "description": "Database container configurations",
+          "properties": {
+            "sqlServer": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Enable SQL Server tests",
+                  "default": true
+                },
+                "image": {
+                  "type": "string",
+                  "description": "Docker image for SQL Server",
+                  "default": "mcr.microsoft.com/mssql/server:2022-latest"
+                },
+                "password": {
+                  "type": "string",
+                  "description": "SQL Server SA password",
+                  "default": "YourStrong@Passw0rd"
+                }
+              },
+              "required": ["enabled"]
+            },
+            "postgreSql": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Enable PostgreSQL tests",
+                  "default": true
+                },
+                "image": {
+                  "type": "string",
+                  "description": "Docker image for PostgreSQL",
+                  "default": "postgres:16-alpine"
+                },
+                "database": {
+                  "type": "string",
+                  "description": "PostgreSQL database name",
+                  "default": "testdb"
+                },
+                "username": {
+                  "type": "string",
+                  "description": "PostgreSQL username",
+                  "default": "postgres"
+                },
+                "password": {
+                  "type": "string",
+                  "description": "PostgreSQL password",
+                  "default": "postgres"
+                }
+              },
+              "required": ["enabled"]
+            }
+          }
+        },
+        "performance": {
+          "type": "object",
+          "description": "Performance testing configurations",
+          "properties": {
+            "presets": {
+              "type": "object",
+              "description": "Predefined dataset size presets",
+              "patternProperties": {
+                ".*": {
+                  "type": "object",
+                  "properties": {
+                    "datasetSize": {
+                      "type": "integer"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "thresholds": {
+              "type": "object",
+              "description": "Performance rating thresholds in milliseconds",
+              "properties": {
+                "excellentMs": {
+                  "type": "integer",
+                  "default": 100
+                },
+                "goodMs": {
+                  "type": "integer",
+                  "default": 500
+                },
+                "acceptableMs": {
+                  "type": "integer",
+                  "default": 1000
+                }
+              }
+            }
+          }
+        },
+        "docker": {
+          "type": "object",
+          "description": "Docker-specific settings",
+          "properties": {
+            "cleanupOnExit": {
+              "type": "boolean",
+              "description": "Cleanup containers after tests",
+              "default": true
+            },
+            "reuseContainers": {
+              "type": "boolean",
+              "description": "Reuse existing containers if available",
+              "default": false
+            }
+          }
+        }
+      },
+      "required": ["datasetSize", "seed"]
+    }
+  },
+  "required": ["testConfiguration"]
+}

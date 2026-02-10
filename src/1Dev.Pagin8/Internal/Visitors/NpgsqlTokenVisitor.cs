@@ -455,7 +455,9 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     private static FormattableString GenerateInQuery(string column, bool isText, InToken token, DbComparison comparison)
     {
         var @operator = token.GetSqlOperator(isText); 
-        var comparisonOperator = SqlOperatorProcessor.GetSqlOperator(token.Comparison, isText, token.IsNegated);
+        // For the ANY operator optimization, get the base operator WITHOUT negation applied
+        // Negation is handled by wrapping with NOT(...) at the end
+        var comparisonOperator = SqlOperatorProcessor.GetSqlOperator(token.Comparison, isText, isNegated: false);
 
         // For non-text types, use standard IN operator (already efficient)
         if (!isText)

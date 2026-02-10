@@ -1,0 +1,55 @@
+{
+  "$schema": "./test-config.schema.json",
+  "testConfiguration": {
+    "datasetSize": 5000,
+    "seed": 42,
+    "enablePerformanceMetrics": true,
+    "databases": {
+      "sqlServer": {
+        "enabled": true,
+        "image": "mcr.microsoft.com/mssql/server:2022-latest",
+        "password": "YourStrong@Passw0rd"
+      },
+      "postgreSql": {
+        "enabled": true,
+        "image": "postgres:16-alpine",
+        "database": "testdb",
+        "username": "postgres",
+        "password": "postgres"
+      }
+    },
+    "performance": {
+      "presets": {
+        "quick": {
+          "datasetSize": 5000,
+          "description": "Quick validation (20-30s)"
+        },
+        "standard": {
+          "datasetSize": 10000,
+          "description": "Standard testing (30-40s)"
+        },
+        "realistic": {
+          "datasetSize": 50000,
+          "description": "Realistic production load (60-90s)"
+        },
+        "stress": {
+          "datasetSize": 100000,
+          "description": "Stress testing (2-3m)"
+        },
+        "extreme": {
+          "datasetSize": 500000,
+          "description": "Extreme performance testing (5-10m)"
+        }
+      },
+      "thresholds": {
+        "excellentMs": 100,
+        "goodMs": 500,
+        "acceptableMs": 1000
+      }
+    },
+    "docker": {
+      "cleanupOnExit": true,
+      "reuseContainers": false
+    }
+  }
+}

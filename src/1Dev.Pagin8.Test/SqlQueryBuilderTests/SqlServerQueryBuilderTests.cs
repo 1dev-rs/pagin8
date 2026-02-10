@@ -315,9 +315,13 @@ public class SqlServerQueryBuilderTests
         var sql = result.Builder.AsSql().Sql;
         var @params = result.Builder.Build().SqlParameters;
 
+        // The query "name.stw.in.(karate,)" parses as: IN operator with starts-with 'karate'
         sql.Should().Be(
-            "AND (name IN ('karate%')) ORDER BY id ASC OFFSET 0 ROWS FETCH NEXT @p0 ROWS ONLY"
+            "AND (LOWER(name) = @p0) ORDER BY id ASC OFFSET 0 ROWS FETCH NEXT @p1 ROWS ONLY"
         );
+        
+        @params.Should().HaveCount(2);
+        @params[0].Argument.Should().Be("karate%"); // starts with pattern
     }
 
     [Theory]

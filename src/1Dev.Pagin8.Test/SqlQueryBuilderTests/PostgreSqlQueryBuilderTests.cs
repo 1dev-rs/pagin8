@@ -179,9 +179,14 @@ public class PostgreSqlQueryBuilderTests
         var sql = result.Builder.AsSql().Sql;
         var @params = result.Builder.Build().SqlParameters;
 
+        // The query "name.stw.in.(karate,)" parses as: IN operator with starts-with 'karate'
+        // PostgreSQL optimizes IN with text to use ILIKE ANY(ARRAY[...])
         sql.Should().Be(
-            "AND ((name ILIKE 'karate%')) ORDER BY id ASC LIMIT @p0"
+            "AND (name ILIKE ANY(ARRAY[@p0])) ORDER BY id ASC LIMIT @p1"
         );
+        
+        @params.Should().HaveCount(2);
+        @params[0].Argument.Should().Be("karate%"); // starts with pattern
     }
 
     [Theory]
