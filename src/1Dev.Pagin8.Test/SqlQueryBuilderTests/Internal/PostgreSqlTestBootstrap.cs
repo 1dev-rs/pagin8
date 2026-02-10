@@ -7,8 +7,6 @@ public static class PostgreSqlTestBootstrap
 {
     public static void Init()
     {
-        // Explicitly set PostgreSQL for these tests
-        // This ensures correct behavior even when SQL Server integration tests run first
         Pagin8Runtime.Initialize(new ServiceConfiguration
         {
             MaxNestingLevel = 5,
@@ -18,7 +16,7 @@ public static class PostgreSqlTestBootstrap
                 MaxItemsPerPage = 5000,
                 MaxSafeItemCount = 1_000_000
             },
-            DatabaseType = DatabaseType.PostgreSql  // Explicitly set PostgreSQL
+            DatabaseType = DatabaseType.PostgreSql
         });
     }
 }

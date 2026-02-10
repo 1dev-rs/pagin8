@@ -453,21 +453,47 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
             return $"{column:raw} IN ({comparison.Value:raw})";
         }
 
-        // For text fields with IN operator
-        // The operator is now correct from SqlOperatorConstants (IN or NOT IN)
-        // We just need to format the values properly for SQL Server
+        // For text fields, extract individual values and parameterize them
         var raw = (string)comparison.Value;
         var values = raw
             .Trim('(', ')')
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(v => v.Trim('\'', ' '))
+            .Select(v => v.Trim('\'', ' ').ToLower())  // Values already lowercased during formatting
             .ToList();
 
-        // SQL Server IN syntax: column IN ('value1', 'value2', ...)
-        // or: column NOT IN ('value1', 'value2', ...)
-        var valueList = string.Join(", ", values.Select(v => $"'{v.ToLower()}'"));
+        if (values.Count == 0)
+        {
+            return token.IsNegated 
+                ? (FormattableString)$"1=1" 
+                : (FormattableString)$"1=0";
+        }
+
+        // OPTIMIZATION: Use SQL Server's IN clause with LOWER() for case-insensitive comparison
+        // This is more efficient than multiple OR conditions
+        // LOWER(column) IN (@p0, @p1, @p2)
         
-        return FormattableStringFactory.Create($"{column:raw} {@operator:raw} ({valueList:raw})");
+        if (values.Count == 1)
+        {
+            var singleValue = values[0];
+            return token.IsNegated
+                ? (FormattableString)$"LOWER({column:raw}) <> {singleValue}"
+                : (FormattableString)$"LOWER({column:raw}) = {singleValue}";
+        }
+
+        // For multiple values, build: LOWER(column) IN (val1, val2, val3) or NOT IN
+        // Each value becomes a proper SQL parameter
+        FormattableString result = $"LOWER({column:raw}) {(token.IsNegated ? "NOT IN" : "IN"):raw} ({values[0]}";
+        
+        // Append remaining values
+        for (var i = 1; i < values.Count; i++)
+        {
+            result = $"{result}, {values[i]}";
+        }
+        
+        // Close the IN clause
+        result = $"{result})";
+        
+        return result;
     }
 
     private void MapPlaceholderToKey<T>(IReadOnlyCollection<SortExpression> sortExpressions) where T : class

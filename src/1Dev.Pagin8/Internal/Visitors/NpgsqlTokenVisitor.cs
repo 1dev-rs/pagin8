@@ -457,9 +457,11 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var @operator = token.GetSqlOperator(isText); 
         var comparisonOperator = SqlOperatorProcessor.GetSqlOperator(token.Comparison, isText, token.IsNegated);
 
+        // For non-text types, use standard IN operator (already efficient)
         if (!isText)
             return $"{column:raw} {@operator:raw} ({comparison.Value:raw})";
 
+        // Handle special case operators that have custom format strings
         if (token.Comparison is ComparisonOperator.Equals or ComparisonOperator.In && @operator.Contains("{0}"))
         {
             string formatted;
@@ -474,25 +476,63 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             }
 
             formatted = string.Format(@operator, comparison.Value);
-
             return FormattableStringFactory.Create($"{column} {formatted}");
         }
 
-
+        // Extract individual values from the pre-formatted comparison.Value
         var raw = (string)comparison.Value;
-
         var values = raw
             .Trim('(', ')')
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(v => v.Trim('\'', ' '))
             .ToList();
 
-        var conditions = values
-            .Select(v => $"{column} {comparisonOperator} '{v}'");
+        if (values.Count == 0)
+        {
+            return token.IsNegated ? (FormattableString)$"TRUE" : (FormattableString)$"FALSE";
+        }
 
-        var combined = string.Join(" OR ", conditions);
+        // OPTIMIZATION: Use PostgreSQL's ANY operator with array for better performance
+        // Instead of: (col ILIKE val1 OR col ILIKE val2 OR col ILIKE val3)
+        // Use: col ILIKE ANY(ARRAY[val1, val2, val3])
+        
+        // Determine the operator for ANY clause
+        var anyOperator = comparisonOperator.ToUpper() switch
+        {
+            "ILIKE" => "ILIKE",
+            "LIKE" => "LIKE", 
+            "=" => "=",
+            "<>" => "<>",
+            _ => comparisonOperator
+        };
 
-        return FormattableStringFactory.Create($"({combined})");
+        // Build ARRAY[val1, val2, val3] with proper parameterization
+        FormattableString arrayElements;
+        if (values.Count == 1)
+        {
+            arrayElements = $"{values[0]}";
+        }
+        else
+        {
+            arrayElements = $"{values[0]}";
+            for (var i = 1; i < values.Count; i++)
+            {
+                arrayElements = $"{arrayElements}, {values[i]}";
+            }
+        }
+
+        // Construct the final query using ANY
+        if (token.IsNegated)
+        {
+            // For negation: NOT (column ILIKE ANY(ARRAY[...]))
+            // Or equivalently: column NOT ILIKE ALL(ARRAY[...])
+            return $"NOT ({column:raw} {anyOperator:raw} ANY(ARRAY[{arrayElements}]))";
+        }
+        else
+        {
+            // Standard: column ILIKE ANY(ARRAY[...])
+            return $"{column:raw} {anyOperator:raw} ANY(ARRAY[{arrayElements}])";
+        }
     }
 
 
