@@ -39,7 +39,7 @@ This guide explains how to perform performance testing with different dataset si
 
 **Syntax**:
 ```powershell
-.\run-performance-tests.ps1 [-DatasetSize <int>] [-Database <string>] [-Seed <int>] [-Verbose]
+.\run-performance-tests.ps1 [-DatasetSize <int>] [-Database <string>] [-Seed <int>] [-DetailedOutput]
 ```
 
 **Examples**:
@@ -54,7 +54,7 @@ This guide explains how to perform performance testing with different dataset si
 .\run-performance-tests.ps1 -DatasetSize 50000 -Seed 999
 
 # Verbose output for debugging
-.\run-performance-tests.ps1 -DatasetSize 100000 -Verbose
+.\run-performance-tests.ps1 -DatasetSize 100000 -DetailedOutput
 ```
 
 ### Method 2: Environment Variables (Manual)
@@ -190,7 +190,7 @@ dotnet test --filter "Container=Testcontainers"
 **3. Performance Validation** (Before PR)
 ```powershell
 # 100k - stress test
-.\run-performance-tests.ps1 -DatasetSize 100000 -Verbose
+.\run-performance-tests.ps1 -DatasetSize 100000 -DetailedOutput
 # Time: ~2 minutes
 ```
 
@@ -229,7 +229,7 @@ dotnet test --filter "Container=Testcontainers"
 
 **1. Enable Verbose Logging**:
 ```powershell
-.\run-performance-tests.ps1 -DatasetSize 50000 -Verbose
+.\run-performance-tests.ps1 -DatasetSize 50000 -DetailedOutput
 ```
 
 **2. Check Console Output**:

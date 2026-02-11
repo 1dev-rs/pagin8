@@ -16,7 +16,7 @@
 .PARAMETER Seed
     Random seed for reproducible data (default: 42)
 
-.PARAMETER Verbose
+.PARAMETER DetailedOutput
     Show detailed test output
 
 .EXAMPLE
@@ -24,8 +24,8 @@
     Run tests with 50,000 products on both databases
 
 .EXAMPLE
-    .\run-performance-tests.ps1 -DatasetSize 100000 -Database SqlServer -Verbose
-    Run tests with 100,000 products on SQL Server only with detailed output
+.\run-performance-tests.ps1 -DatasetSize 100000 -Database SqlServer -DetailedOutput
+Run tests with 100,000 products on SQL Server only with detailed output
 
 .EXAMPLE
     .\run-performance-tests.ps1 -DatasetSize 10000 -Seed 123
@@ -48,7 +48,7 @@ param(
     [string]$Preset = '',
     
     [Parameter(Mandatory=$false)]
-    [switch]$Verbose
+    [switch]$DetailedOutput
 )
 
 $ErrorActionPreference = "Stop"
@@ -150,30 +150,28 @@ if ($Database -ne 'Both') {
 # Build test command
 $testArgs = @(
     "test",
-    "--filter", "`"$filter`"",
+    "--filter", $filter,
     "--no-build"
 )
 
-if ($Verbose) {
-    $testArgs += "--logger"
-    $testArgs += "console;verbosity=detailed"
+if ($DetailedOutput) {
+    $testArgs += "--logger", "console;verbosity=detailed"
 }
 else {
-    $testArgs += "--logger"
-    $testArgs += "console;verbosity=normal"
+    $testArgs += "--logger", "console;verbosity=normal"
 }
 
 # Show test command
 Write-Info "Running tests..."
 Write-Host "  Filter: $filter" -ForegroundColor Gray
+Write-Host "  Command: dotnet $($testArgs -join ' ')" -ForegroundColor Gray
 Write-Host ""
 
 # Run tests
 $startTime = Get-Date
 
 try {
-    $command = "dotnet $($testArgs -join ' ')"
-    Invoke-Expression $command
+    & dotnet $testArgs
     
     $exitCode = $LASTEXITCODE
     $elapsed = (Get-Date) - $startTime
