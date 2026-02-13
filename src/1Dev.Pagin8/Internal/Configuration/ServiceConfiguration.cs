@@ -8,4 +8,6 @@ public record ServiceConfiguration
     public PagingSettings PagingSettings { get; set; } = new();
 
     public int MaxRelativeDateYears { get; set; } = 20;
+
+    public bool IgnoreUnknownSelectFields { get; set; }
 }
