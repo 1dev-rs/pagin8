@@ -7,7 +7,7 @@ namespace _1Dev.Pagin8.Extensions.Backend.Implementations;
 /// <summary>
 /// SQL Server connection factory implementation.
 /// </summary>
-public class SqlServerConnectionFactory : IDbConnectionFactory
+public class SqlServerConnectionFactory : IDbConnectionFactory, ISqlServerDbConnectionFactory
 {
     private readonly string _connectionString;
 
