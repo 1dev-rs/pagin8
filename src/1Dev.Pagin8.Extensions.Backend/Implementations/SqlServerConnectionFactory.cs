@@ -6,6 +6,7 @@ namespace _1Dev.Pagin8.Extensions.Backend.Implementations;
 
 /// <summary>
 /// SQL Server connection factory implementation.
+/// Internal to keep the public API surface small; use the DI registration helpers to register providers.
 /// </summary>
 public class SqlServerConnectionFactory : IDbConnectionFactory, ISqlServerDbConnectionFactory
 {

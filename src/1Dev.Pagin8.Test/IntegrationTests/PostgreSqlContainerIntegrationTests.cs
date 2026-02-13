@@ -378,8 +378,7 @@ public class PostgreSqlContainerIntegrationTests
         
         var resultList = data.ToList();
         
-        // Record performance metrics
-        _fixture.Metrics.RecordQuery(testName, queryString, sw.ElapsedMilliseconds, resultList.Count);
+        // integration-only: do not record performance metrics here
         
         _output.WriteLine($"Query: {queryString}");
         _output.WriteLine($"SQL: {result.Builder.AsSql().Sql}");

@@ -83,47 +83,7 @@
             }
           }
         },
-        "performance": {
-          "type": "object",
-          "description": "Performance testing configurations",
-          "properties": {
-            "presets": {
-              "type": "object",
-              "description": "Predefined dataset size presets",
-              "patternProperties": {
-                ".*": {
-                  "type": "object",
-                  "properties": {
-                    "datasetSize": {
-                      "type": "integer"
-                    },
-                    "description": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            },
-            "thresholds": {
-              "type": "object",
-              "description": "Performance rating thresholds in milliseconds",
-              "properties": {
-                "excellentMs": {
-                  "type": "integer",
-                  "default": 100
-                },
-                "goodMs": {
-                  "type": "integer",
-                  "default": 500
-                },
-                "acceptableMs": {
-                  "type": "integer",
-                  "default": 1000
-                }
-              }
-            }
-          }
-        },
+        
         "docker": {
           "type": "object",
           "description": "Docker-specific settings",

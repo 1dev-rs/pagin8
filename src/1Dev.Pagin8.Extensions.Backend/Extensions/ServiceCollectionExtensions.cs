@@ -124,7 +124,78 @@ public static class ServiceCollectionExtensions
         if (connectionFactoryFunc == null)
             throw new ArgumentNullException(nameof(connectionFactoryFunc));
 
+        // Register the un-named factory instance as before
         services.AddSingleton<ISqlServerDbConnectionFactory>(sp => connectionFactoryFunc());
+
+        // Also ensure the named provider mapping contains the default provider
+        services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(sp =>
+        {
+            var provider = new SqlServerDbConnectionFactoryProvider();
+            var existing = sp.GetService<ISqlServerDbConnectionFactory>();
+            if (existing != null)
+            {
+                provider.Add(SqlServerConstants.DefaultProviderName, existing);
+            }
+            return provider;
+        });
+
+        RegisterSqlServerRuntimeServices(services);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds Pagin8 backend services for SQL Server with a specific named provider.
+    /// </summary>
+    public static IServiceCollection AddPagin8BackendSqlServer(
+        this IServiceCollection services,
+        string name,
+        string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentNullException(nameof(name));
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new ArgumentNullException(nameof(connectionString));
+
+        // Ensure core Pagin8 services are registered
+        EnsurePagin8CoreRegistered(services);
+
+        // Register the named connection factory into a provider
+        services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(sp =>
+        {
+            // Try to get existing provider or create new one
+            var existingProvider = sp.GetService<ISqlServerDbConnectionFactoryProvider>() ?? new SqlServerDbConnectionFactoryProvider();
+            existingProvider.Add(name, new SqlServerConnectionFactory(connectionString));
+            return existingProvider;
+        });
+
+        // Register SQL Server runtime services (query builder + filter provider factory)
+        RegisterSqlServerRuntimeServices(services);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds Pagin8 backend services for SQL Server with a factory function and a provider name.
+    /// </summary>
+    public static IServiceCollection AddPagin8BackendSqlServer(
+        this IServiceCollection services,
+        string name,
+        Func<ISqlServerDbConnectionFactory> connectionFactoryFunc)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentNullException(nameof(name));
+        if (connectionFactoryFunc == null)
+            throw new ArgumentNullException(nameof(connectionFactoryFunc));
+
+        EnsurePagin8CoreRegistered(services);
+
+        services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(sp =>
+        {
+            var existingProvider = sp.GetService<ISqlServerDbConnectionFactoryProvider>() ?? new SqlServerDbConnectionFactoryProvider();
+            existingProvider.Add(name, connectionFactoryFunc());
+            return existingProvider;
+        });
 
         RegisterSqlServerRuntimeServices(services);
 
@@ -151,23 +222,26 @@ public static class ServiceCollectionExtensions
         EnsurePagin8CoreRegistered(services);
 
         // Register SQL Server-specific query builder with SqlServerTokenVisitor
-        // This is separate from the main ISqlQueryBuilder which uses PostgreSQL visitor
         services.AddScoped<ISqlServerSqlQueryBuilder>(sp =>
         {
-            // Note: These services must be registered by calling AddPagin8() first
             var tokenizationService = sp.GetRequiredService<ITokenizationService>();
             var metadata = sp.GetRequiredService<IPagin8MetadataProvider>();
             var dateProcessor = sp.GetRequiredService<IDateProcessor>();
 
-            // Create SQL Server token visitor
             var sqlServerVisitor = new SqlServerTokenVisitor(metadata, dateProcessor);
-
-            // Create query builder with SQL Server visitor
             return new SqlServerSqlQueryBuilder(tokenizationService, sqlServerVisitor);
         });
 
-        // Register SQL Server filter provider
-        services.AddScoped<ISqlServerFilterProvider, SqlServerFilterProvider>();
+        // Register a factory to create SQL Server filter providers for a given named connection
+        services.AddScoped<ISqlServerFilterProviderFactory, SqlServerFilterProviderFactory>();
+
+        // For backward compatibility, if code requests ISqlServerFilterProvider directly,
+        // resolve the default named provider.
+        services.AddScoped<ISqlServerFilterProvider>(sp =>
+        {
+            var factory = sp.GetRequiredService<ISqlServerFilterProviderFactory>();
+            return factory.Create(SqlServerConstants.DefaultProviderName);
+        });
     }
 
     private static void EnsurePagin8CoreRegistered(IServiceCollection services)

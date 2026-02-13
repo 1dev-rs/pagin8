@@ -4,7 +4,6 @@ using Testcontainers.MsSql;
 using _1Dev.Pagin8.Test.IntegrationTests.Configuration;
 using _1Dev.Pagin8.Test.IntegrationTests.Data;
 using _1Dev.Pagin8.Test.IntegrationTests.Models;
-using _1Dev.Pagin8.Test.IntegrationTests.Performance;
 using Xunit;
 
 namespace _1Dev.Pagin8.Test.IntegrationTests.Fixtures;
@@ -28,14 +27,13 @@ public class SqlServerContainerFixture : IAsyncLifetime
     public SqlConnection? Connection { get; private set; }
     public int DatasetSize => _config.TestSettings.DatasetSize;
     public int Seed => _config.TestSettings.Seed;
-    public PerformanceMetricsCollector Metrics { get; } = new();
+    // Performance metrics collector removed; integration-only fixture
 
     public SqlServerContainerFixture()
     {
         // Load configuration from test-config.json with environment variable overrides
         _config = TestConfiguration.Instance;
-        Metrics.DatabaseType = "SQL Server";
-        Metrics.DatasetSize = _config.TestSettings.DatasetSize;
+        // integration-only: no performance metrics
     }
 
     public async Task InitializeAsync()
@@ -83,13 +81,7 @@ public class SqlServerContainerFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        // Print performance metrics if enabled
-        if (_config.TestSettings.EnablePerformanceMetrics && Metrics.GenerateReport().TotalTests > 0)
-        {
-            var report = Metrics.GenerateReport();
-            var thresholds = _config.TestSettings.Performance.Thresholds;
-            Metrics.PrintReport(report, thresholds.ExcellentMs, thresholds.GoodMs, thresholds.AcceptableMs);
-        }
+        // No performance metrics to print; integration-only cleanup
         
         if (Connection != null)
         {
