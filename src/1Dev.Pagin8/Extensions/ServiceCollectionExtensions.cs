@@ -52,6 +52,17 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    public static IServiceCollection AddPagin8Sql(this IServiceCollection services, Action<ServiceConfiguration>? userConfig = null)
+    {
+        services.AddPagin8(cfg =>
+        {
+            userConfig?.Invoke(cfg);
+            cfg.DatabaseType = DatabaseType.SqlServer;
+        });
+
+        return services;
+    }
+
     private static void ValidateConfig(ServiceConfiguration config)
     {
         if (config.MaxNestingLevel < 0)
