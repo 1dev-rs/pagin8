@@ -12,6 +12,7 @@ using _1Dev.Pagin8.Internal.Validators.Contracts;
 using _1Dev.Pagin8.Internal.Visitors;
 using Internal.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace _1Dev.Pagin8.Extensions;
 
@@ -69,7 +70,11 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IContextValidator, TokenContextValidator>();
         services.AddTransient<IMetadataProvider, MetadataProvider>();
         services.AddTransient<IPagin8MetadataProvider, Pagin8MetadataProvider>();
-        services.AddTransient<ISqlQueryBuilder, SqlQueryBuilder>();
+        services.AddTransient<SqlQueryBuilder>();
+        services.AddTransient<ISqlQueryBuilder>(sp =>
+            new LoggingSqlQueryBuilder(
+                sp.GetRequiredService<SqlQueryBuilder>(),
+                sp.GetRequiredService<ILoggerFactory>()));
         services.AddTransient(typeof(IQueryableTokenProcessor<>), typeof(QueryableTokenProcessor<>));
 
         RegisterDatabaseSpecificServices(services, config.DatabaseType);
