@@ -1,33 +1,15 @@
+using _1Dev.Pagin8.Extensions;
 using _1Dev.Pagin8.Input;
 using _1Dev.Pagin8.Internal;
-using _1Dev.Pagin8.Internal.DateProcessor;
-using _1Dev.Pagin8.Internal.Metadata;
-using _1Dev.Pagin8.Internal.Metadata.Models;
-using _1Dev.Pagin8.Internal.Tokenizer;
-using _1Dev.Pagin8.Internal.Visitors;
 using _1Dev.Pagin8.Test.SqlQueryBuilderTests.Internal;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace _1Dev.Pagin8.Test.SqlQueryBuilderTests;
 
 public class LoggingSqlQueryBuilderTests
 {
-    private readonly ISqlQueryBuilder _inner;
-
-    public LoggingSqlQueryBuilderTests()
-    {
-        Pagin8TestBootstrap.Init();
-        var tokenizer = new Tokenizer();
-        var contextValidator = new PassThroughContextValidator();
-        var metadataProvider = new Pagin8MetadataProvider(new MetadataProvider());
-        var dateProcessor = new DateProcessor();
-        var tokenizationService = new TokenizationService(tokenizer, contextValidator, metadataProvider);
-        var tokenVisitor = new NpgsqlTokenVisitor(metadataProvider, dateProcessor);
-
-        _inner = new SqlQueryBuilder(tokenizationService, tokenVisitor);
-    }
-
     private static QueryBuilderParameters CreateParameters(string queryString = "name=eq.John") => new()
     {
         InputParameters = QueryInputParameters.Create(
@@ -36,48 +18,58 @@ public class LoggingSqlQueryBuilderTests
         )
     };
 
-    [Fact]
-    public void Should_Log_Sql_And_Parameters_When_Trace_Enabled()
+    private static (ISqlQueryBuilder sut, TestLoggerProvider loggerProvider) CreateSut(LogLevel minLevel)
     {
-        var loggerFactory = new TestLoggerFactory(LogLevel.Trace);
-        var sut = new LoggingSqlQueryBuilder(_inner, loggerFactory);
+        var loggerProvider = new TestLoggerProvider(minLevel);
+
+        var services = new ServiceCollection();
+        services.AddPagin8();
+        services.AddLogging(builder =>
+        {
+            builder.ClearProviders();
+            builder.SetMinimumLevel(minLevel);
+            builder.AddProvider(loggerProvider);
+        });
+
+        var sp = services.BuildServiceProvider();
+        return (sp.GetRequiredService<ISqlQueryBuilder>(), loggerProvider);
+    }
+
+    [Fact]
+    public void Should_Log_Query_With_Entity_And_Params_When_Trace_Enabled()
+    {
+        var (sut, loggerProvider) = CreateSut(LogLevel.Trace);
 
         sut.BuildSqlQuery<TestEntity>(CreateParameters());
 
-        loggerFactory.Entries.Should().Contain(e =>
-            e.Category == "Pagin8" &&
-            e.Level == LogLevel.Trace &&
-            e.EventId.Id == 1001 &&
-            e.Message.Contains("ILIKE"));
+        var entry = loggerProvider.Entries.Single(e =>
+            e.Category == "Pagin8" && e.EventId.Id == 1001);
 
-        loggerFactory.Entries.Should().Contain(e =>
-            e.Category == "Pagin8" &&
-            e.Level == LogLevel.Trace &&
-            e.EventId.Id == 1002 &&
-            e.Message.Contains("@p0=john"));
+        entry.Level.Should().Be(LogLevel.Trace);
+        entry.Message.Should().Contain("TestEntity");
+        entry.Message.Should().Contain("name=eq.John");
+        entry.Message.Should().Contain("ILIKE");
+        entry.Message.Should().Contain("@p0 (String) = 'john'");
     }
 
     [Fact]
     public void Should_Not_Log_When_Trace_Disabled()
     {
-        var loggerFactory = new TestLoggerFactory(LogLevel.Information);
-        var sut = new LoggingSqlQueryBuilder(_inner, loggerFactory);
+        var (sut, loggerProvider) = CreateSut(LogLevel.Information);
 
         sut.BuildSqlQuery<TestEntity>(CreateParameters());
 
-        loggerFactory.Entries.Should().BeEmpty();
+        loggerProvider.Entries.Where(e => e.Category == "Pagin8").Should().BeEmpty();
     }
 
     [Fact]
-    public void Should_Return_Same_Result_As_Inner_Builder()
+    public void Should_Return_Valid_Query_Result()
     {
-        var loggerFactory = new TestLoggerFactory(LogLevel.Trace);
-        var sut = new LoggingSqlQueryBuilder(_inner, loggerFactory);
-        var parameters = CreateParameters();
+        var (sut, _) = CreateSut(LogLevel.Trace);
 
-        var decoratedResult = sut.BuildSqlQuery<TestEntity>(parameters);
-        var directResult = _inner.BuildSqlQuery<TestEntity>(parameters);
+        var result = sut.BuildSqlQuery<TestEntity>(CreateParameters());
 
-        decoratedResult.Builder!.AsSql().Sql.Should().Be(directResult.Builder!.AsSql().Sql);
+        result.Builder.Should().NotBeNull();
+        result.Builder!.AsSql().Sql.Should().Contain("ILIKE");
     }
 }

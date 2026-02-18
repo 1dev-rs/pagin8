@@ -727,6 +727,56 @@ public class ProductRepository : FilteredRepositoryBase<ProductDto>
 
 ---
 
+## 🔍 Diagnostics & Query Logging
+
+Pagin8 supports built-in query logging through the standard `Microsoft.Extensions.Logging` infrastructure. When enabled, it outputs the generated SQL, parameter values with types, the source entity, and the original filter string — all in a single structured log entry.
+
+No additional configuration is needed inside Pagin8 — logging is controlled entirely through your application's logging configuration.
+
+### Serilog
+
+```json
+{
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Pagin8": "Verbose"
+      }
+    }
+  }
+}
+```
+
+### Standard .NET Logging
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Pagin8": "Trace"
+    }
+  }
+}
+```
+
+### Output
+
+```
+trce: Pagin8[1001]
+      Query built for ProductDto | Filter: "name=cs.laptop&price=gte.500"
+      | SQL: AND name ILIKE @p0 ESCAPE '\' AND price >= @p1 ORDER BY id ASC LIMIT @p2
+      | Params (3): [@p0 (String) = 'laptop', @p1 (Decimal) = '500', @p2 (Int32) = '1000000']
+```
+
+### Notes
+
+- Logging uses `LogLevel.Trace` (Serilog: `Verbose`) — the most granular level. It will not appear unless explicitly enabled for the `Pagin8` category.
+- When the log level is not enabled, there is **negligible performance overhead** — a single `IsEnabled` check exits early before any string formatting or allocations occur. When logging *is* active, the `LoggerMessage` source generator is used internally to avoid boxing and unnecessary allocations in the logging pipeline.
+- Parameter values are included in the output. Since this is the most verbose log level, this is by design — but be aware that parameters may contain **user-provided data** (names, emails, etc.). Do not enable `Trace`/`Verbose` level in production environments where logs are stored long-term or exposed to unauthorized parties.
+
+---
+
 ## 🔧 Extending the Library
 
 Pagin8 is designed to be extended for your specific needs. Here are common extension patterns:
