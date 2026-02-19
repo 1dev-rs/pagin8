@@ -30,6 +30,8 @@
     <PackageReference Include="Npgsql" Version="9.0.4" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.2.0" />
+    <!-- Pin to net9-compatible version; without this an SDK with .NET 10 resolves 10.0.0.0 which breaks net9 deployments -->
+    <PackageReference Include="System.Text.Json" Version="9.0.4" />
   </ItemGroup>
 
 </Project>
