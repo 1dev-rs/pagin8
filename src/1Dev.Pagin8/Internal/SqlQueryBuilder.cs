@@ -129,8 +129,8 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
 
     private static QueryBuilder BuildJsonWrapper(QueryBuilder innerQuery, string cte, bool isCount)
     {
-        return innerQuery.DbConnection.QueryBuilder(isCount ? 
-            $"{cte:raw}{innerQuery:raw}" : 
+        return innerQuery.DbConnection.QueryBuilder(isCount ?
+            $"{cte:raw}{innerQuery:raw}" :
             (FormattableString)$"{cte:raw}SELECT COALESCE(json_agg(items), '[]') FROM ({innerQuery:raw}) items");
     }
 

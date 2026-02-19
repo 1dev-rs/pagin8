@@ -2,6 +2,8 @@ using System.Data;
 using System.Text.Json;
 using InterpolatedSql.Dapper;
 using _1Dev.Pagin8;
+using Dapper;
+using InterpolatedSql.Dapper.SqlBuilders;
 using _1Dev.Pagin8.Input;
 using _1Dev.Pagin8.Extensions.Backend.Interfaces;
 using _1Dev.Pagin8.Extensions.Backend.Models;
@@ -46,7 +48,7 @@ public class FilterProvider : IFilterProvider
             queryString: query.QueryString,
             defaultQueryString: query.DefaultQuery,
             ignoreLimit: query.IgnoreLimit,
-            isJson: query.IsJson,
+            isJson: false,
             isCount: false
         );
 
