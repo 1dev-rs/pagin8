@@ -17,7 +17,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <!-- Integration test dependencies -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
-    <PackageReference Include="Npgsql" Version="8.0.5" />
+    <PackageReference Include="Npgsql" Version="9.0.4" />
     <PackageReference Include="Dapper" Version="2.1.66" />
     <!-- Testcontainers for Docker-based integration tests -->
     <PackageReference Include="Testcontainers" Version="3.10.0" />

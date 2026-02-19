@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using InterpolatedSql.Dapper;
 using _1Dev.Pagin8;
 using _1Dev.Pagin8.Input;
@@ -26,6 +27,11 @@ public class FilterProvider : IFilterProvider
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _sqlQueryBuilder = sqlQueryBuilder ?? throw new ArgumentNullException(nameof(sqlQueryBuilder));
     }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     /// <summary>
     /// Executes a filtered query and returns paged results.
@@ -62,7 +68,22 @@ public class FilterProvider : IFilterProvider
             };
         }
 
-        var data = await buildResult.Builder.QueryAsync<TResponse>();
+        IEnumerable<TResponse> data;
+
+        if (query.IsJson)
+        {
+            // isJson=true: the SQL is wrapped in SELECT COALESCE(json_agg(items), '[]') FROM (...) items
+            // This returns ONE row with ONE column — a raw JSON array string.
+            // QueryAsync<string>() reads it, then we deserialize into the typed collection.
+            var json = await buildResult.Builder.QueryFirstOrDefaultAsync<string>();
+            data = string.IsNullOrEmpty(json) || json == "[]"
+                ? []
+                : JsonSerializer.Deserialize<IEnumerable<TResponse>>(json, JsonOptions) ?? [];
+        }
+        else
+        {
+            data = await buildResult.Builder.QueryAsync<TResponse>();
+        }
 
         var count = buildResult.Meta.ShowCount
             ? await GetCountInternalAsync<TResponse>(connection, viewName, query)
