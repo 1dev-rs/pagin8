@@ -160,14 +160,27 @@ public static class ServiceCollectionExtensions
         // Ensure core Pagin8 services are registered
         EnsurePagin8CoreRegistered(services);
 
-        // Register the named connection factory into a provider
-        services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(sp =>
+        // Accumulate named providers at registration time (not resolve time) to avoid
+        // circular dependency and multiple-descriptor problems when called more than once.
+        var existingDescriptor = services.FirstOrDefault(
+            s => s.ServiceType == typeof(ISqlServerDbConnectionFactoryProvider)
+              && s.ImplementationInstance is SqlServerDbConnectionFactoryProvider);
+
+        if (existingDescriptor?.ImplementationInstance is SqlServerDbConnectionFactoryProvider existingProvider)
         {
-            // Try to get existing provider or create new one
-            var existingProvider = sp.GetService<ISqlServerDbConnectionFactoryProvider>() ?? new SqlServerDbConnectionFactoryProvider();
+            // Reuse the already-registered instance and add the new named factory to it.
             existingProvider.Add(name, new SqlServerConnectionFactory(connectionString));
-            return existingProvider;
-        });
+        }
+        else
+        {
+            // First call: remove any factory-based descriptors and register a concrete instance.
+            var stale = services.Where(s => s.ServiceType == typeof(ISqlServerDbConnectionFactoryProvider)).ToList();
+            foreach (var d in stale) services.Remove(d);
+
+            var provider = new SqlServerDbConnectionFactoryProvider();
+            provider.Add(name, new SqlServerConnectionFactory(connectionString));
+            services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(provider);
+        }
 
         // Register SQL Server runtime services (query builder + filter provider factory)
         RegisterSqlServerRuntimeServices(services);

@@ -21,16 +21,22 @@ public record FilteredDataQuery
     public bool IgnoreLimit { get; init; }
 
     /// <summary>
+    /// Whether to use JSON query builder path (e.g. for PostgreSQL JSON columns).
+    /// </summary>
+    public bool IsJson { get; init; }
+
+    /// <summary>
     /// Creates a new FilteredDataQuery from a query string.
     /// </summary>
     /// <param name="queryString">The query string from HTTP request.</param>
     /// <param name="ignoreLimit">Whether to ignore the limit clause.</param>
     /// <returns>A new FilteredDataQuery instance.</returns>
-    public static FilteredDataQuery Create(string? queryString, bool ignoreLimit = false)
+    public static FilteredDataQuery Create(string? queryString, bool ignoreLimit = false, bool isJson = false)
         => new()
         {
             QueryString = queryString?.TrimStart('?') ?? string.Empty,
-            IgnoreLimit = ignoreLimit
+            IgnoreLimit = ignoreLimit,
+            IsJson = isJson
         };
 
     /// <summary>
@@ -40,11 +46,12 @@ public record FilteredDataQuery
     /// <param name="defaultQuery">Default filter to apply.</param>
     /// <param name="ignoreLimit">Whether to ignore the limit clause.</param>
     /// <returns>A new FilteredDataQuery instance.</returns>
-    public static FilteredDataQuery Create(string? queryString, string defaultQuery, bool ignoreLimit = false)
+    public static FilteredDataQuery Create(string? queryString, string defaultQuery, bool ignoreLimit = false, bool isJson = false)
         => new()
         {
             QueryString = queryString?.TrimStart('?') ?? string.Empty,
             DefaultQuery = defaultQuery,
-            IgnoreLimit = ignoreLimit
+            IgnoreLimit = ignoreLimit,
+            IsJson = isJson
         };
 }

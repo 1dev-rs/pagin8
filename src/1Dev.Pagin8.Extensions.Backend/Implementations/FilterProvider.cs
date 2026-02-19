@@ -1,6 +1,5 @@
 using System.Data;
-using Dapper;
-using InterpolatedSql.Dapper.SqlBuilders;
+using InterpolatedSql.Dapper;
 using _1Dev.Pagin8;
 using _1Dev.Pagin8.Input;
 using _1Dev.Pagin8.Extensions.Backend.Interfaces;
@@ -41,7 +40,7 @@ public class FilterProvider : IFilterProvider
             queryString: query.QueryString,
             defaultQueryString: query.DefaultQuery,
             ignoreLimit: query.IgnoreLimit,
-            isJson: false,
+            isJson: query.IsJson,
             isCount: false
         );
 
@@ -63,7 +62,7 @@ public class FilterProvider : IFilterProvider
             };
         }
 
-        var data = await ExecuteQueryAsync<TResponse>(connection, buildResult.Builder);
+        var data = await buildResult.Builder.QueryAsync<TResponse>();
 
         var count = buildResult.Meta.ShowCount
             ? await GetCountInternalAsync<TResponse>(connection, viewName, query)
@@ -112,18 +111,7 @@ public class FilterProvider : IFilterProvider
         if (buildResult.Builder is null)
             return 0;
 
-        var builtSql = buildResult.Builder.Build();
-        return await connection.ExecuteScalarAsync<int>(
-            builtSql.Sql,
-            builtSql.SqlParameters);
-    }
-
-    private static async Task<IEnumerable<TResponse>> ExecuteQueryAsync<TResponse>(
-        IDbConnection connection,
-        QueryBuilder builder)
-    {
-        var builtSql = builder.Build();
-        return await connection.QueryAsync<TResponse>(builtSql.Sql, builtSql.SqlParameters);
+        return await buildResult.Builder.ExecuteScalarAsync<int>();
     }
 
     private static FormattableString GetBaseQuery(string viewName)
