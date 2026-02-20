@@ -48,7 +48,7 @@ public class FilterProvider : IFilterProvider
             queryString: query.QueryString,
             defaultQueryString: query.DefaultQuery,
             ignoreLimit: query.IgnoreLimit,
-            isJson: false,
+            isJson: query.IsJson,
             isCount: false
         );
 
