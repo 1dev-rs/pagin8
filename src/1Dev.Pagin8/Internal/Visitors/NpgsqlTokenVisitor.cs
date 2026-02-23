@@ -812,36 +812,52 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
         if (!token.Values.Any())
             return;
 
-        var jsonElements = token.Values.Select(v =>
+        var col = token.JsonPath;
+
+        switch (token.Operator)
+        {
+            case ArrayOperator.Include:
+            {
+                var jsonLiteral = BuildJsonbArrayLiteral(token.Values, token.Field, arrayType);
+                if (token.IsNegated)
+                    result.Builder += $"(NOT ({col:raw} @> {jsonLiteral}::jsonb) OR {col:raw} IS NULL)";
+                else
+                    result.Builder += $"{col:raw} @> {jsonLiteral}::jsonb";
+                break;
+            }
+            case ArrayOperator.Exclude:
+            {
+                if (token.IsNegated)
+                    result.Builder += $"NOT (";
+
+                result.Builder += $"(";
+                var first = true;
+                foreach (var v in token.Values)
+                {
+                    if (!first) result.Builder += $" AND ";
+                    first = false;
+                    var singleLiteral = BuildJsonbArrayLiteral([v], token.Field, arrayType);
+                    result.Builder += $"NOT ({col:raw} @> {singleLiteral}::jsonb)";
+                }
+                result.Builder += $" OR {col:raw} IS NULL)";
+
+                if (token.IsNegated)
+                    result.Builder += $")";
+                break;
+            }
+            default:
+                throw new NotSupportedException($"Unsupported array operator: {token.Operator}");
+        }
+    }
+
+    private static string BuildJsonbArrayLiteral(IEnumerable<object> values, string field, Type arrayType)
+    {
+        var elements = values.Select(v =>
         {
             var jsonbValue = FormatJsonbScalar(v, arrayType);
-            // Double braces to escape string.Format() in InterpolatedSql
-            return "{{\"" + token.Field + "\": " + jsonbValue + "}}";
-        }).ToList();
-
-        var filterSql = token.Operator switch
-        {
-            ArrayOperator.Include =>
-                token.JsonPath + " @> '[" + string.Join(", ", jsonElements) + "]'::jsonb",
-            ArrayOperator.Exclude =>
-                "(" + string.Join(" AND ", jsonElements.Select(e =>
-                    "NOT (" + token.JsonPath + " @> '[" + e + "]'::jsonb)")) +
-                " OR " + token.JsonPath + " IS NULL)",
-            _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
-        };
-
-        if (token.IsNegated)
-        {
-            // Include + negated: NOT(NULL @> ...) = NULL, but should be true for NULL columns
-            if (token.Operator == ArrayOperator.Include)
-                result.Builder += $"(NOT ({filterSql:raw}) OR {token.JsonPath:raw} IS NULL)";
-            else
-                result.Builder += $"NOT ({filterSql:raw})";
-        }
-        else
-        {
-            result.Builder += $"{filterSql:raw}";
-        }
+            return "{\"" + field + "\": " + jsonbValue + "}";
+        });
+        return "[" + string.Join(", ", elements) + "]";
     }
 
     private static string FormatJsonbScalar(object value, Type type)

@@ -222,9 +222,11 @@ public class SqlQueryBuilderTests
 
         var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
         var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
 
-        sql.Should().Contain("tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb");
+        sql.Should().Contain("tariffAmounts @> @p0::jsonb");
         sql.Should().NotContain("ARRAY(SELECT");
+        @params[0].Argument.Should().Be("[{\"tariffNumber\": 4}]");
     }
 
     [Fact]
@@ -240,9 +242,11 @@ public class SqlQueryBuilderTests
 
         var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
         var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
 
-        sql.Should().Contain("tariffAmounts @> '[{\"tariffNumber\": 4}, {\"tariffNumber\": 5}]'::jsonb");
+        sql.Should().Contain("tariffAmounts @> @p0::jsonb");
         sql.Should().NotContain("ARRAY(SELECT");
+        @params[0].Argument.Should().Be("[{\"tariffNumber\": 4}, {\"tariffNumber\": 5}]");
     }
 
     [Fact]
@@ -258,10 +262,12 @@ public class SqlQueryBuilderTests
 
         var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
         var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
 
-        sql.Should().Contain("NOT (tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb)");
+        sql.Should().Contain("NOT (tariffAmounts @> @p0::jsonb)");
         sql.Should().Contain("OR tariffAmounts IS NULL");
         sql.Should().NotContain("ARRAY(SELECT");
+        @params[0].Argument.Should().Be("[{\"tariffNumber\": 4}]");
     }
 
     [Fact]
@@ -277,11 +283,14 @@ public class SqlQueryBuilderTests
 
         var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
         var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
 
-        sql.Should().Contain("NOT (tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb)");
-        sql.Should().Contain("NOT (tariffAmounts @> '[{\"tariffNumber\": 5}]'::jsonb)");
+        sql.Should().Contain("NOT (tariffAmounts @> @p0::jsonb)");
+        sql.Should().Contain("NOT (tariffAmounts @> @p1::jsonb)");
         sql.Should().Contain("OR tariffAmounts IS NULL");
         sql.Should().NotContain("ARRAY(SELECT");
+        @params[0].Argument.Should().Be("[{\"tariffNumber\": 4}]");
+        @params[1].Argument.Should().Be("[{\"tariffNumber\": 5}]");
     }
 
     [Fact]
@@ -297,9 +306,11 @@ public class SqlQueryBuilderTests
 
         var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
         var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
 
-        sql.Should().Contain("(NOT (tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb) OR tariffAmounts IS NULL)");
+        sql.Should().Contain("(NOT (tariffAmounts @> @p0::jsonb) OR tariffAmounts IS NULL)");
         sql.Should().NotContain("ARRAY(SELECT");
+        @params[0].Argument.Should().Be("[{\"tariffNumber\": 4}]");
     }
 
     [Fact]
@@ -315,9 +326,11 @@ public class SqlQueryBuilderTests
 
         var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
         var sql = result.Builder.AsSql().Sql;
+        var @params = result.Builder.Build().SqlParameters;
 
-        sql.Should().Contain("NOT ((NOT (tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb) OR tariffAmounts IS NULL))");
+        sql.Should().Contain("NOT ((NOT (tariffAmounts @> @p0::jsonb) OR tariffAmounts IS NULL))");
         sql.Should().NotContain("ARRAY(SELECT");
+        @params[0].Argument.Should().Be("[{\"tariffNumber\": 4}]");
     }
 
     [Theory]
