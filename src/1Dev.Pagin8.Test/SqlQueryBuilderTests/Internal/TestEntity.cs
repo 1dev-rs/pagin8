@@ -19,3 +19,17 @@ public class TestNestedEntity
     public int Id { get; set; }
     public TestEntity? TestEntity { get; set; }
 }
+
+public class TestTariffAmount
+{
+    public int TariffNumber { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+}
+
+public class TestJsonArrayEntity
+{
+    [Key]
+    public int Id { get; set; }
+    public List<TestTariffAmount> TariffAmounts { get; set; } = new();
+}

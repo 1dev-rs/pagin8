@@ -414,7 +414,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
                 SELECT NULL as val
                 WHERE jsonb_array_length(/**field**/) = 0
             ) AS x
-            WHERE 1=1 
+            WHERE 1=1
             /**filters**/ ";
 
     private static string TryEscapeSpecialChars(ComparisonOperator op)
@@ -809,29 +809,48 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
 
     private static void ProcessComplexTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type arrayType)
     {
-        var arrayTypeSpecifier = GetPostgresArrayType(arrayType);
-        var valuesFormatted = FormatArrayValues(token.Values, arrayType);
-
-        if (!valuesFormatted.Any())
+        if (!token.Values.Any())
             return;
 
-        var leftHandSideArray = $"ARRAY(SELECT x ->> '{token.Field}' FROM jsonb_array_elements({token.JsonPath}) as x){arrayTypeSpecifier}";
+        var jsonElements = token.Values.Select(v =>
+        {
+            var jsonbValue = FormatJsonbScalar(v, arrayType);
+            // Double braces to escape string.Format() in InterpolatedSql
+            return "{{\"" + token.Field + "\": " + jsonbValue + "}}";
+        }).ToList();
 
         var filterSql = token.Operator switch
         {
-            ArrayOperator.Include => $"{leftHandSideArray} @> ARRAY[{valuesFormatted}]{arrayTypeSpecifier}",
-            ArrayOperator.Exclude => $"NOT ({leftHandSideArray} && ARRAY[{valuesFormatted}]{arrayTypeSpecifier}) OR jsonb_array_length({token.JsonPath}) = 0",
+            ArrayOperator.Include =>
+                token.JsonPath + " @> '[" + string.Join(", ", jsonElements) + "]'::jsonb",
+            ArrayOperator.Exclude =>
+                "(" + string.Join(" AND ", jsonElements.Select(e =>
+                    "NOT (" + token.JsonPath + " @> '[" + e + "]'::jsonb)")) +
+                " OR " + token.JsonPath + " IS NULL)",
             _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
         };
 
         if (token.IsNegated)
         {
-            result.Builder += $"NOT ({filterSql:raw})";
+            // Include + negated: NOT(NULL @> ...) = NULL, but should be true for NULL columns
+            if (token.Operator == ArrayOperator.Include)
+                result.Builder += $"(NOT ({filterSql:raw}) OR {token.JsonPath:raw} IS NULL)";
+            else
+                result.Builder += $"NOT ({filterSql:raw})";
         }
         else
         {
             result.Builder += $"{filterSql:raw}";
         }
+    }
+
+    private static string FormatJsonbScalar(object value, Type type)
+    {
+        if (type == typeof(string))
+            return "\"" + Transliteration.CyrlToLatin(value.ToString()!) + "\"";
+        if (type == typeof(bool))
+            return value.ToString()!.ToLowerInvariant();
+        return value.ToString()!;
     }
 
     private static string GetJsonFieldType(TypeCode typeCode)

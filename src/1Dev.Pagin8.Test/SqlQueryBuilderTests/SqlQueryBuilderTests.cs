@@ -209,6 +209,117 @@ public class SqlQueryBuilderTests
         );
     }
 
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateJsonbContainment_ForComplexArrayIncludeSingle()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_json_array_entity",
+                queryString: "tariffAmounts.with=(tariffNumber.incl(4))", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
+        var sql = result.Builder.AsSql().Sql;
+
+        sql.Should().Contain("tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb");
+        sql.Should().NotContain("ARRAY(SELECT");
+    }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateJsonbContainment_ForComplexArrayIncludeMultiple()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_json_array_entity",
+                queryString: "tariffAmounts.with=(tariffNumber.incl(4,5))", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
+        var sql = result.Builder.AsSql().Sql;
+
+        sql.Should().Contain("tariffAmounts @> '[{\"tariffNumber\": 4}, {\"tariffNumber\": 5}]'::jsonb");
+        sql.Should().NotContain("ARRAY(SELECT");
+    }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateJsonbContainment_ForComplexArrayExcludeSingle()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_json_array_entity",
+                queryString: "tariffAmounts.with=(tariffNumber.excl(4))", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
+        var sql = result.Builder.AsSql().Sql;
+
+        sql.Should().Contain("NOT (tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb)");
+        sql.Should().Contain("OR tariffAmounts IS NULL");
+        sql.Should().NotContain("ARRAY(SELECT");
+    }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateJsonbContainment_ForComplexArrayExcludeMultiple()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_json_array_entity",
+                queryString: "tariffAmounts.with=(tariffNumber.excl(4,5))", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
+        var sql = result.Builder.AsSql().Sql;
+
+        sql.Should().Contain("NOT (tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb)");
+        sql.Should().Contain("NOT (tariffAmounts @> '[{\"tariffNumber\": 5}]'::jsonb)");
+        sql.Should().Contain("OR tariffAmounts IS NULL");
+        sql.Should().NotContain("ARRAY(SELECT");
+    }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateJsonbContainment_ForComplexArrayNegatedInclude()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_json_array_entity",
+                queryString: "tariffAmounts.with=(tariffNumber.not.incl(4))", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
+        var sql = result.Builder.AsSql().Sql;
+
+        sql.Should().Contain("(NOT (tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb) OR tariffAmounts IS NULL)");
+        sql.Should().NotContain("ARRAY(SELECT");
+    }
+
+    [Fact]
+    public void BuildSqlQuery_ShouldGenerateJsonbContainment_ForComplexArrayNegatedExclude()
+    {
+        var parameters = new QueryBuilderParameters
+        {
+            InputParameters = QueryInputParameters.Create(
+                sql: "SELECT * FROM test_json_array_entity",
+                queryString: "tariffAmounts.with=(tariffNumber.not.excl(4))", string.Empty, true
+            )
+        };
+
+        var result = _sut.BuildSqlQuery<TestJsonArrayEntity>(parameters);
+        var sql = result.Builder.AsSql().Sql;
+
+        sql.Should().Contain("NOT ((NOT (tariffAmounts @> '[{\"tariffNumber\": 4}]'::jsonb) OR tariffAmounts IS NULL))");
+        sql.Should().NotContain("ARRAY(SELECT");
+    }
+
     [Theory]
     [InlineData("11.12.2025")]
     [InlineData("12/11/2025")]
