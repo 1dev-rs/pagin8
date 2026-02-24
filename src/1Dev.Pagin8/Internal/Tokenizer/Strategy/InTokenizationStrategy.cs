@@ -64,7 +64,10 @@ public class InTokenizationStrategy : ITokenizationStrategy
 
     public List<Token> Tokenize(string query, string jsonPath, int nestingLevel = 1)
     {
-        throw new NotImplementedException();
+        var tokens = Tokenize(query, nestingLevel);
+        foreach (var token in tokens)
+            token.JsonPath = jsonPath;
+        return tokens;
     }
 
 

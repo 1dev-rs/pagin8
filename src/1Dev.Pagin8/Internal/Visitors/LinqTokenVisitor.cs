@@ -373,7 +373,38 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
 
     public IQueryable<T> Visit(NestedFilterToken token, IQueryable<T> queryable)
     {
-        throw new NotImplementedException();
+        var parentProp = GetPropertyInfo(typeof(T), token.Field);
+        var parentAccess = Expression.Property(_parameter, parentProp);
+        var parentType = parentProp.PropertyType;
+
+        var isCollection = typeof(IEnumerable).IsAssignableFrom(parentType) && parentType != typeof(string);
+
+        Expression body;
+        if (isCollection)
+        {
+            var elementType = parentType.IsArray
+                ? parentType.GetElementType()!
+                : parentType.GetGenericArguments()[0];
+
+            var innerParam = Expression.Parameter(elementType, "elem");
+            var innerBody = BuildNestedBody(token.Tokens, innerParam, elementType);
+
+            var funcType = typeof(Func<,>).MakeGenericType(elementType, typeof(bool));
+            var innerLambda = Expression.Lambda(funcType, innerBody, innerParam);
+
+            var anyMethod = typeof(Enumerable)
+                .GetMethods(BindingFlags.Static | BindingFlags.Public)
+                .First(m => m.Name == nameof(Enumerable.Any) && m.GetParameters().Length == 2)
+                .MakeGenericMethod(elementType);
+
+            body = Expression.Call(null, anyMethod, parentAccess, innerLambda);
+        }
+        else
+        {
+            body = BuildNestedBody(token.Tokens, parentAccess, parentType);
+        }
+
+        return queryable.Where(Expression.Lambda<Func<T, bool>>(body, _parameter));
     }
 
     public IQueryable<T> Visit(ArrayOperationToken token, IQueryable<T> queryable)
@@ -589,6 +620,105 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
     }
 
     #endregion
+
+    private static Expression BuildNestedBody(List<Token> tokens, Expression baseExpr, Type baseType)
+    {
+        var expressions = tokens
+            .Select(t => BuildNestedChildExpression(t, baseExpr, baseType))
+            .OfType<Expression>()
+            .ToList();
+
+        return expressions.Count switch
+        {
+            0 => Expression.Constant(true),
+            1 => expressions[0],
+            _ => expressions.Skip(1).Aggregate(expressions[0], Expression.AndAlso)
+        };
+    }
+
+    private static Expression? BuildNestedChildExpression(Token token, Expression baseExpr, Type baseType)
+    {
+        return token switch
+        {
+            ComparisonToken ct => BuildNestedComparisonExpr(ct, baseExpr, baseType),
+            IsToken it => BuildNestedIsExpr(it, baseExpr, baseType),
+            InToken inT => BuildNestedInExpr(inT, baseExpr, baseType),
+            _ => null
+        };
+    }
+
+    private static MemberExpression GetNestedProperty(Expression baseExpr, Type baseType, string fieldName)
+    {
+        var prop = baseType.GetProperty(fieldName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
+            ?? throw new InvalidOperationException($"Property '{fieldName}' not found on type '{baseType.Name}'.");
+        return Expression.Property(baseExpr, prop);
+    }
+
+    private static Expression BuildNestedComparisonExpr(ComparisonToken token, Expression baseExpr, Type baseType)
+    {
+        var propAccess = GetNestedProperty(baseExpr, baseType, token.Field);
+        var propType = propAccess.Type;
+        var underlyingType = propType.IsGenericType && propType.GetGenericTypeDefinition() == typeof(Nullable<>)
+            ? Nullable.GetUnderlyingType(propType)!
+            : propType;
+
+        var convertedValue = Convert.ChangeType(token.Value, underlyingType, CultureInfo.InvariantCulture);
+        var right = Expression.Constant(convertedValue, propType);
+        var isText = underlyingType == typeof(string);
+
+        var comparison = LinqOperatorProcessor.GetLinqExpression(token.Operator, isText, propAccess, right);
+        return token.IsNegated ? Expression.Not(comparison) : comparison;
+    }
+
+    private static Expression BuildNestedIsExpr(IsToken token, Expression baseExpr, Type baseType)
+    {
+        var propAccess = GetNestedProperty(baseExpr, baseType, token.Field);
+
+        if (token.IsEmptyQuery)
+        {
+            var nullCheck = Expression.Equal(propAccess, Expression.Constant(null, propAccess.Type));
+            if (propAccess.Type == typeof(string))
+            {
+                var emptyCheck = Expression.Equal(propAccess, Expression.Constant(string.Empty));
+                return token.IsNegated
+                    ? Expression.AndAlso(
+                        Expression.NotEqual(propAccess, Expression.Constant(null, propAccess.Type)),
+                        Expression.NotEqual(propAccess, Expression.Constant(string.Empty)))
+                    : Expression.OrElse(nullCheck, emptyCheck);
+            }
+            return token.IsNegated ? Expression.Not(nullCheck) : nullCheck;
+        }
+
+        var value = bool.Parse(token.Value);
+        var valueCheck = Expression.Equal(propAccess, Expression.Constant(value));
+        return token.IsNegated ? Expression.Not(valueCheck) : valueCheck;
+    }
+
+    private static Expression BuildNestedInExpr(InToken token, Expression baseExpr, Type baseType)
+    {
+        var propAccess = GetNestedProperty(baseExpr, baseType, token.Field);
+        var propType = propAccess.Type;
+        var underlyingType = propType.IsGenericType && propType.GetGenericTypeDefinition() == typeof(Nullable<>)
+            ? Nullable.GetUnderlyingType(propType)!
+            : propType;
+
+        var rawValues = token.Values.Trim('(', ')').Split(',');
+        var converted = rawValues.Select(v => Convert.ChangeType(v.Trim(), underlyingType, CultureInfo.InvariantCulture)).ToArray();
+        var array = Array.CreateInstance(underlyingType, converted.Length);
+        Array.Copy(converted, array, converted.Length);
+
+        var containsMethod = typeof(Enumerable)
+            .GetMethods(BindingFlags.Static | BindingFlags.Public)
+            .First(m => m.Name == "Contains" && m.GetParameters().Length == 2)
+            .MakeGenericMethod(underlyingType);
+
+        Expression propToCheck = propType != underlyingType
+            ? Expression.Convert(propAccess, underlyingType)
+            : propAccess;
+
+        var containsCall = Expression.Call(null, containsMethod, Expression.Constant(array, array.GetType()), propToCheck);
+        return token.IsNegated ? Expression.Not(containsCall) : containsCall;
+    }
 
     private class ReplaceExpressionVisitor(Expression oldValue, Expression newValue) : ExpressionVisitor
     {

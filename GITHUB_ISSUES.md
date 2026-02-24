@@ -460,6 +460,8 @@ public string RevertToQueryString(IEnumerable<Token> tokens)
 
 ### Issue #10: Feature Parity - LINQ Visitor Nested Filtering Not Implemented
 
+**Status:** ✅ RESOLVED — `LinqTokenVisitor<T>.Visit(NestedFilterToken, IQueryable<T>)` implemented. For regular nested objects, builds an expression tree accessing `x.ParentField.ChildField`. For collection properties (`IEnumerable<>`), generates `x.ParentField.Any(elem => ...)`. Handles `ComparisonToken`, `IsToken`, and `InToken` children via static helpers (`BuildNestedComparisonExpr`, `BuildNestedIsExpr`, `BuildNestedInExpr`). 7 unit tests added in `LinqNestedFilterAndJsonPathInTests`.
+
 **Labels:** `enhancement`, `priority:low`, `phase-4`, `hard`
 
 **Description:**
@@ -511,6 +513,8 @@ This is a significant undertaking. Prioritize based on actual LINQ visitor usage
 ---
 
 ### Issue #11: Feature Gap - JSON Path IN Support Not Implemented
+
+**Status:** ✅ RESOLVED — `InTokenizationStrategy.Tokenize(string query, string jsonPath, int nestingLevel)` implemented by delegating to the regular overload and setting `token.JsonPath = jsonPath` on each returned token. Also fixed `IsTokenizationStrategy` the same way (same `NotImplementedException`). The SQL visitors (`NpgsqlTokenVisitor`, `SqlServerTokenVisitor`) already handled `InToken.JsonPath` via `DetermineProcessingType` — so no visitor changes were needed. Tests added in `LinqNestedFilterAndJsonPathInTests`.
 
 **Labels:** `enhancement`, `priority:low`, `phase-4`, `hard`
 
@@ -679,7 +683,7 @@ public static Pagin8StatusCode Pagin8_InvalidLimit = new()
 
 ## Summary
 
-**Total Issues:** 12 (11 resolved, 2 open)
+**Total Issues:** 12 (12 resolved, 0 open)
 
 ### Resolved
 - ✅ #5 — IsToken negation logic bug
@@ -687,6 +691,8 @@ public static Pagin8StatusCode Pagin8_InvalidLimit = new()
 - ✅ #7 — CultureInfo inconsistency in Double/Float parsing
 - ✅ #8 — SQL injection risk via FormattableString field name replacement
 - ✅ #9 — Cache reflection method lookups (performance)
+- ✅ #10 — LINQ visitor nested filtering not implemented
+- ✅ #11 — JSON path IN support not implemented
 - ✅ #12 — Null semantics in nullable column sort coalescing
 - ✅ #13 — ReDoS risk in regex patterns (Regex.Escape + startup validation)
 - ✅ #14 — Empty IN operator values not rejected
@@ -695,8 +701,7 @@ public static Pagin8StatusCode Pagin8_InvalidLimit = new()
 - ✅ #17 — No limit value range check
 
 ### Open
-- 🔵 #10 — LINQ visitor nested filtering not implemented (hard, backlog)
-- 🔵 #11 — JSON path IN support not implemented (hard, backlog)
+_All issues resolved — ready for new release._
 
 ### By Phase
 - **Phase 2 (High Priority):** 5 issues (~10 hours)
