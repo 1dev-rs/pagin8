@@ -414,7 +414,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
                 SELECT NULL as val
                 WHERE jsonb_array_length(/**field**/) = 0
             ) AS x
-            WHERE 1=1 
+            WHERE 1=1
             /**filters**/ ";
 
     private static string TryEscapeSpecialChars(ComparisonOperator op)
@@ -851,29 +851,64 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
 
     private static void ProcessComplexTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type arrayType)
     {
-        var arrayTypeSpecifier = GetPostgresArrayType(arrayType);
-        var valuesFormatted = FormatArrayValues(token.Values, arrayType);
-
-        if (!valuesFormatted.Any())
+        if (!token.Values.Any())
             return;
 
-        var leftHandSideArray = $"ARRAY(SELECT x ->> '{token.Field}' FROM jsonb_array_elements({token.JsonPath}) as x){arrayTypeSpecifier}";
+        var col = token.JsonPath;
 
-        var filterSql = token.Operator switch
+        switch (token.Operator)
         {
-            ArrayOperator.Include => $"{leftHandSideArray} @> ARRAY[{valuesFormatted}]{arrayTypeSpecifier}",
-            ArrayOperator.Exclude => $"NOT ({leftHandSideArray} && ARRAY[{valuesFormatted}]{arrayTypeSpecifier}) OR jsonb_array_length({token.JsonPath}) = 0",
-            _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
-        };
+            case ArrayOperator.Include:
+            {
+                var jsonLiteral = BuildJsonbArrayLiteral(token.Values, token.Field, arrayType);
+                if (token.IsNegated)
+                    result.Builder += $"(NOT ({col:raw} @> {jsonLiteral}::jsonb) OR {col:raw} IS NULL)";
+                else
+                    result.Builder += $"{col:raw} @> {jsonLiteral}::jsonb";
+                break;
+            }
+            case ArrayOperator.Exclude:
+            {
+                if (token.IsNegated)
+                    result.Builder += $"NOT (";
 
-        if (token.IsNegated)
-        {
-            result.Builder += $"NOT ({filterSql:raw})";
+                result.Builder += $"(";
+                var first = true;
+                foreach (var v in token.Values)
+                {
+                    if (!first) result.Builder += $" AND ";
+                    first = false;
+                    var singleLiteral = BuildJsonbArrayLiteral([v], token.Field, arrayType);
+                    result.Builder += $"NOT ({col:raw} @> {singleLiteral}::jsonb)";
+                }
+                result.Builder += $" OR {col:raw} IS NULL)";
+
+                if (token.IsNegated)
+                    result.Builder += $")";
+                break;
+            }
+            default:
+                throw new NotSupportedException($"Unsupported array operator: {token.Operator}");
         }
-        else
+    }
+
+    private static string BuildJsonbArrayLiteral(IEnumerable<object> values, string field, Type arrayType)
+    {
+        var elements = values.Select(v =>
         {
-            result.Builder += $"{filterSql:raw}";
-        }
+            var jsonbValue = FormatJsonbScalar(v, arrayType);
+            return "{\"" + field + "\": " + jsonbValue + "}";
+        });
+        return "[" + string.Join(", ", elements) + "]";
+    }
+
+    private static string FormatJsonbScalar(object value, Type type)
+    {
+        if (type == typeof(string))
+            return "\"" + Transliteration.CyrlToLatin(value.ToString()!) + "\"";
+        if (type == typeof(bool))
+            return value.ToString()!.ToLowerInvariant();
+        return value.ToString()!;
     }
 
     private static string GetJsonFieldType(TypeCode typeCode)
