@@ -45,6 +45,8 @@ Refactor `AppendEmptyQueryConditions` to use explicit conditional logic for text
 
 ### Issue #6: Date Range Validation - Missing Sanity Check (start <= end)
 
+**Status:** ✅ RESOLVED — `DateProcessor.GetStartAndEndOfRelativeDate` now passes the result through `ValidateDateRange()` which throws `Pagin8Exception(Pagin8_InvalidDateRange)` when `start > end`.
+
 **Labels:** `enhancement`, `priority:high`, `phase-2`
 
 **Description:**
@@ -250,6 +252,8 @@ Expected ~50% performance improvement for nested filters.
 
 ### Issue #12: Null Semantics - Incorrect Sort Coalescing for Nullable Columns
 
+**Status:** ✅ RESOLVED — Keyset pagination `IsNullAllowed` branch in `NpgsqlTokenVisitor` and `SqlServerTokenVisitor` now handles null cursor value explicitly (`IS NULL`) and for non-null values uses an explicit null-aware compound expression instead of `COALESCE(null, fallback)`.
+
 **Labels:** `bug`, `priority:medium`, `phase-3`
 
 **Description:**
@@ -298,6 +302,8 @@ if (columnInfo.IsNullAllowed)
 ---
 
 ### Issue #13: Security - Regex Pattern Injection (ReDoS Risk)
+
+**Status:** ✅ RESOLVED — Added `Esc()`/`EscJoin()` helpers in `TokenHelper` that wrap `Regex.Escape()`. All 14 pattern properties now escape config values before interpolating them. Added `ValidateConfiguration()` startup check for empty/null config values.
 
 **Labels:** `security`, `priority:medium`, `phase-3`
 
@@ -669,24 +675,24 @@ public static Pagin8StatusCode Pagin8_InvalidLimit = new()
 
 ## Summary
 
-**Total Issues:** 12 (6 resolved, 6 open)
+**Total Issues:** 12 (9 resolved, 3 open)
 
 ### Resolved
 - ✅ #5 — IsToken negation logic bug
+- ✅ #6 — Date range start > end not validated
 - ✅ #7 — CultureInfo inconsistency in Double/Float parsing
+- ✅ #12 — Null semantics in nullable column sort coalescing
+- ✅ #13 — ReDoS risk in regex patterns (Regex.Escape + startup validation)
 - ✅ #14 — Empty IN operator values not rejected
 - ✅ #15 — Unnecessary `ToList()` in `Standardize()`
 - ✅ #16 — `Guard.AgainstNull` missing parameter name
 - ✅ #17 — No limit value range check
 
 ### Open
-- 🔴 #6 — Date range validation (start ≤ end)
-- 🟠 #8 — SQL injection risk via FormattableString field name
-- 🟡 #9 — Cache reflection method lookups (performance)
-- 🟡 #12 — Null semantics in sort coalescing
-- 🟡 #13 — ReDoS risk in regex pattern
-- 🔵 #10 — LINQ visitor nested filtering not implemented
-- 🔵 #11 — JSON path IN support not implemented
+- 🟠 #8 — SQL injection risk via FormattableString field name replacement
+- 🟡 #9 — Cache reflection method lookups (performance, optional)
+- 🔵 #10 — LINQ visitor nested filtering not implemented (hard, backlog)
+- 🔵 #11 — JSON path IN support not implemented (hard, backlog)
 
 ### By Phase
 - **Phase 2 (High Priority):** 5 issues (~10 hours)

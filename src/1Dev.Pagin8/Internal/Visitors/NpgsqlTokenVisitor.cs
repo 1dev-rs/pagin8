@@ -294,8 +294,16 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
                     if (columnInfo.IsNullAllowed)
                     {
-                        var coalesce = GetCoalesceMinValue(typeCode);
-                        builder += $" COALESCE({formattedName:raw}, {coalesce}) {@operator:raw} COALESCE({formattedValue}, {coalesce})";
+                        if (formattedValue is null)
+                        {
+                            // Cursor value is null with non-equality operator: only NULL rows qualify
+                            builder += $" {formattedName:raw} IS NULL";
+                        }
+                        else
+                        {
+                            var coalesce = GetCoalesceMinValue(typeCode);
+                            builder += $" (({formattedName:raw} IS NULL AND {coalesce} {@operator:raw} {formattedValue}) OR ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {formattedValue}))";
+                        }
                     }
                     else
                     {

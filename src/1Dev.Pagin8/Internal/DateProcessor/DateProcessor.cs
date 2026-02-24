@@ -7,8 +7,9 @@ namespace _1Dev.Pagin8.Internal.DateProcessor;
 public class DateProcessor : IDateProcessor
 {
 
-    public (DateTime startDate, DateTime endDate) GetStartAndEndOfRelativeDate(DateTime currentDate, int amount, DateRange unit, bool goBackwards, bool exact = false, bool strict = false) =>
-        unit switch
+    public (DateTime startDate, DateTime endDate) GetStartAndEndOfRelativeDate(DateTime currentDate, int amount, DateRange unit, bool goBackwards, bool exact = false, bool strict = false)
+    {
+        var result = unit switch
         {
             DateRange.Day => CalculateDayRange(currentDate, amount, goBackwards, exact, strict),
             DateRange.Week => CalculateWeekRange(currentDate, amount, goBackwards, exact, strict),
@@ -16,6 +17,8 @@ public class DateProcessor : IDateProcessor
             DateRange.Year => CalculateYearRange(currentDate, amount, goBackwards, exact, strict),
             _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, "Invalid DateRange unit.")
         };
+        return ValidateDateRange(result.startDate, result.endDate);
+    }
 
     private static (DateTime startDate, DateTime endDate) CalculateDayRange(DateTime currentDate, int amount, bool goBackwards, bool exact, bool strict)
     {
@@ -147,6 +150,16 @@ public class DateProcessor : IDateProcessor
             return;
 
         throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidDateRange.Code);
+    }
+
+    private static (DateTime start, DateTime end) ValidateDateRange(DateTime start, DateTime end)
+    {
+        if (start > end)
+            throw new Pagin8Exception(
+                Pagin8StatusCode.Pagin8_InvalidDateRange.Code,
+                $"Invalid date range: start ({start:yyyy-MM-dd HH:mm:ss}) is after end ({end:yyyy-MM-dd HH:mm:ss})"
+            );
+        return (start, end);
     }
 
 }

@@ -291,8 +291,16 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
 
                     if (columnInfo.IsNullAllowed)
                     {
-                        var coalesce = GetCoalesceMinValue(typeCode);
-                        builder += $" ISNULL({formattedName:raw}, {coalesce}) {@operator:raw} ISNULL({formattedValue}, {coalesce})";
+                        if (formattedValue is null)
+                        {
+                            // Cursor value is null with non-equality operator: only NULL rows qualify
+                            builder += $" {formattedName:raw} IS NULL";
+                        }
+                        else
+                        {
+                            var coalesce = GetCoalesceMinValue(typeCode);
+                            builder += $" ((ISNULL({formattedName:raw}, {coalesce}) {@operator:raw} {formattedValue} AND {formattedName:raw} IS NULL) OR ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {formattedValue}))";
+                        }
                     }
                     else
                     {

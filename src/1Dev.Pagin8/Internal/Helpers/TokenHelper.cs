@@ -15,38 +15,57 @@ public static class TokenHelper
         { 2, ',' }
     };
 
-    public static string DateRangePattern => $@"^(?<field>\w+)=(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>{string.Join("|", EngineDefaults.Config.DateRangeOperators)})\.(?<value>\d+)(?<range>[dmwy])(?<exact>e)?(?<strict>s)?(?:\^(?<comment>.+))?$";
+    // Escape config values before embedding in regex patterns (prevents ReDoS)
+    private static string Esc(string s) => Regex.Escape(s);
+    private static string EscJoin(IEnumerable<string> values) => string.Join("|", values.Select(Regex.Escape));
 
-    public static string NestedDateRangePattern => $@"^(?<field>\w+)\.(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>{string.Join("|", EngineDefaults.Config.DateRangeOperators)})\.(?<value>\d+)(?<range>[dmwy])(?<exact>e)?(?<strict>s)?(?:\^(?<comment>.+))?$";
+    public static void ValidateConfiguration()
+    {
+        if (string.IsNullOrWhiteSpace(EngineDefaults.Config.Negation))
+            throw new InvalidOperationException("Pagin8 configuration error: Negation cannot be empty.");
 
-    public static string ComparisonPattern => $@"^(?<field>[^.]+)=(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>({string.Join("|", EngineDefaults.Config.ComparisonOperators)}))\.(?<val>.*?)(?:\^(?<comment>.+))?$";
+        if (EngineDefaults.Config.ComparisonOperators.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidOperationException("Pagin8 configuration error: ComparisonOperators cannot contain empty values.");
 
-    public static string NestedComparisonPattern => $@"^(?<field>[^.]+)\.(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>({string.Join("|", EngineDefaults.Config.ComparisonOperators)}))\.(?<val>.*?)(?:\^(?<comment>.+))?$";
+        if (EngineDefaults.Config.DateRangeOperators.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidOperationException("Pagin8 configuration error: DateRangeOperators cannot contain empty values.");
 
-    public static string IsPattern => $@"^(?<field>[^.]+)=(?<operator>{EngineDefaults.Config.IsOperator})\.(?<negation>{EngineDefaults.Config.Negation}\.)?(?<val>.*?)(?:\^(?<comment>.+))?$";
+        if (EngineDefaults.Config.GroupOperators.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidOperationException("Pagin8 configuration error: GroupOperators cannot contain empty values.");
+    }
 
-    public static string NestedIsPattern => $@"^(?<field>[^.]+)\.(?<operator>{EngineDefaults.Config.IsOperator})\.(?<negation>{EngineDefaults.Config.Negation}\.)?(?<val>.*?)(?:\^(?<comment>.+))?$";
+    public static string DateRangePattern => $@"^(?<field>\w+)=(?<negation>{Esc(EngineDefaults.Config.Negation)}\.)?(?<operator>{EscJoin(EngineDefaults.Config.DateRangeOperators)})\.(?<value>\d+)(?<range>[dmwy])(?<exact>e)?(?<strict>s)?(?:\^(?<comment>.+))?$";
 
-    public static string InPattern => $@"^(?<field>[^.=]+)=(?:(?<negation>{EngineDefaults.Config.Negation})\.)?(?:(?<comparison>eq|is|gt|gte|lt|lte|stw|enw|like|cs)\.)?(?<operator>{EngineDefaults.Config.InOperator})\.(?<values>\(([^)]+)\)|[^)]+)(?:\^(?<comment>.+))?$";
+    public static string NestedDateRangePattern => $@"^(?<field>\w+)\.(?<negation>{Esc(EngineDefaults.Config.Negation)}\.)?(?<operator>{EscJoin(EngineDefaults.Config.DateRangeOperators)})\.(?<value>\d+)(?<range>[dmwy])(?<exact>e)?(?<strict>s)?(?:\^(?<comment>.+))?$";
 
-    public static string NestedInPattern => $@"^(?<field>[^.=]+)(?:\.(?<negation>{EngineDefaults.Config.Negation}))?(?:\.(?<comparison>eq|is|gt|gte|lt|lte|stw|enw|like|cs))?\.(?<operator>{EngineDefaults.Config.InOperator})\.(?<values>\(([^)]+)\)|[^)]+)(?:\^(?<comment>.+))?$";
+    public static string ComparisonPattern => $@"^(?<field>[^.]+)=(?<negation>{Esc(EngineDefaults.Config.Negation)}\.)?(?<operator>({EscJoin(EngineDefaults.Config.ComparisonOperators)}))\.(?<val>.*?)(?:\^(?<comment>.+))?$";
 
-    public static string GroupingPattern => $@"^(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>{string.Join("|", EngineDefaults.Config.GroupOperators)})=\((?<val>.*)\)(?:\^(?<comment>.+))?$";
+    public static string NestedComparisonPattern => $@"^(?<field>[^.]+)\.(?<negation>{Esc(EngineDefaults.Config.Negation)}\.)?(?<operator>({EscJoin(EngineDefaults.Config.ComparisonOperators)}))\.(?<val>.*?)(?:\^(?<comment>.+))?$";
 
-    public static string NestedGroupingPattern => $@"^(?<negation>{EngineDefaults.Config.Negation}\.)?(?<operator>{string.Join("|", EngineDefaults.Config.GroupOperators)})\((?<val>.*)\)(?:\^(?<comment>.+))?$";
+    public static string IsPattern => $@"^(?<field>[^.]+)=(?<operator>{Esc(EngineDefaults.Config.IsOperator)})\.(?<negation>{Esc(EngineDefaults.Config.Negation)}\.)?(?<val>.*?)(?:\^(?<comment>.+))?$";
 
-    public static string SortExpressionPlainPattern => $@"(?<field>\$?\w+)\.(?<order>{string.Join("|", EngineDefaults.Config.PossibleOrder)})";
+    public static string NestedIsPattern => $@"^(?<field>[^.]+)\.(?<operator>{Esc(EngineDefaults.Config.IsOperator)})\.(?<negation>{Esc(EngineDefaults.Config.Negation)}\.)?(?<val>.*?)(?:\^(?<comment>.+))?$";
 
-    public static string SortExpressionPagingPattern => $@"(?<field>\$?\w+)\.(?<order>{string.Join("|", EngineDefaults.Config.PossibleOrder)})\.(?<lastValue>.*?)(?=(\.\w+\.)|(?:,\w+\.)|$)";
+    public static string InPattern => $@"^(?<field>[^.=]+)=(?:(?<negation>{Esc(EngineDefaults.Config.Negation)})\.)?(?:(?<comparison>eq|is|gt|gte|lt|lte|stw|enw|like|cs)\.)?(?<operator>{Esc(EngineDefaults.Config.InOperator)})\.(?<values>\(([^)]+)\)|[^)]+)(?:\^(?<comment>.+))?$";
+
+    public static string NestedInPattern => $@"^(?<field>[^.=]+)(?:\.(?<negation>{Esc(EngineDefaults.Config.Negation)}))?(?:\.(?<comparison>eq|is|gt|gte|lt|lte|stw|enw|like|cs))?\.(?<operator>{Esc(EngineDefaults.Config.InOperator)})\.(?<values>\(([^)]+)\)|[^)]+)(?:\^(?<comment>.+))?$";
+
+    public static string GroupingPattern => $@"^(?<negation>{Esc(EngineDefaults.Config.Negation)}\.)?(?<operator>{EscJoin(EngineDefaults.Config.GroupOperators)})=\((?<val>.*)\)(?:\^(?<comment>.+))?$";
+
+    public static string NestedGroupingPattern => $@"^(?<negation>{Esc(EngineDefaults.Config.Negation)}\.)?(?<operator>{EscJoin(EngineDefaults.Config.GroupOperators)})\((?<val>.*)\)(?:\^(?<comment>.+))?$";
+
+    public static string SortExpressionPlainPattern => $@"(?<field>\$?\w+)\.(?<order>{EscJoin(EngineDefaults.Config.PossibleOrder)})";
+
+    public static string SortExpressionPagingPattern => $@"(?<field>\$?\w+)\.(?<order>{EscJoin(EngineDefaults.Config.PossibleOrder)})\.(?<lastValue>.*?)(?=(\.\w+\.)|(?:,\w+\.)|$)";
 
     public static string PagingSectionPattern => @"paging=\((.*)\)";
 
     public static string NestedFilterPattern => @"^(?<field>\w+)\.with=\((?<conditions>[\s\S]*)\)(?:\^(?<comment>.+))?$";
     public static string NestedNestedFilterPattern => @"^(?<field>\w+)\.with.\((?<conditions>[\s\S]*)\)(?:\^(?<comment>.+))?$";
 
-    public static string ArrayPattern => $@"^(?<field>[^.=]+)=(?:(?<negation>{EngineDefaults.Config.Negation})\.)?(?<mode>incl|excl)\((?<values>.*)\)(?:\^(?<comment>.+))?$";
+    public static string ArrayPattern => $@"^(?<field>[^.=]+)=(?:(?<negation>{Esc(EngineDefaults.Config.Negation)})\.)?(?<mode>incl|excl)\((?<values>.*)\)(?:\^(?<comment>.+))?$";
 
-    public static string NestedArrayPattern => $@"^(?<field>[^.=]+)(?:\.(?<negation>{EngineDefaults.Config.Negation}))?\.(?<mode>incl|excl)\((?<values>.*)\)(?:\^(?<comment>.+))?$";
+    public static string NestedArrayPattern => $@"^(?<field>[^.=]+)(?:\.(?<negation>{Esc(EngineDefaults.Config.Negation)}))?\.(?<mode>incl|excl)\((?<values>.*)\)(?:\^(?<comment>.+))?$";
 
     public static string SortExpressionKeyPattern => @$"^\{QueryConstants.KeyPlaceholder}\.([^\s]+)";
 
