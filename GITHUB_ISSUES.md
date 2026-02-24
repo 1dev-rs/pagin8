@@ -137,6 +137,8 @@ TypeCode.Single => float.TryParse(value, NumberStyles.Float, CultureInfo.Invaria
 
 ### Issue #8: SQL Injection Risk - FormattableString Field Name Replacement
 
+**Status:** ✅ RESOLVED — `ValidateJsonFieldName()` added as a private static method in both `NpgsqlTokenVisitor` and `SqlServerTokenVisitor`, called at the start of `HandleJsonArrayFilter` before `token.Field` is embedded in any SQL string. Validates that the field name starts with a letter or underscore and contains only alphanumeric characters, underscores, or dots. Throws `Pagin8Exception(Pagin8_TokenFieldInvalid)` on violation.
+
 **Labels:** `security`, `priority:high`, `phase-2`
 
 **Description:**
@@ -192,6 +194,8 @@ private FormattableString BuildJsonArrayQuery(string field, FormattableString in
 ---
 
 ### Issue #9: Performance - Cache Reflection Method Lookups (50% improvement)
+
+**Status:** ✅ RESOLVED — Added `private static readonly ConcurrentDictionary<(Type TokenType, Type EntityType), MethodInfo> _methodCache` to both `NpgsqlTokenVisitor` and `SqlServerTokenVisitor`. `DynamicVisit` now uses `_methodCache.GetOrAdd(...)` so `GetMethod` + `MakeGenericMethod` are called only once per unique `(tokenType, entityType)` pair. Added `using System.Collections.Concurrent` to both visitors.
 
 **Labels:** `performance`, `priority:high`, `phase-2`, `optional`
 
@@ -675,12 +679,14 @@ public static Pagin8StatusCode Pagin8_InvalidLimit = new()
 
 ## Summary
 
-**Total Issues:** 12 (9 resolved, 3 open)
+**Total Issues:** 12 (11 resolved, 2 open)
 
 ### Resolved
 - ✅ #5 — IsToken negation logic bug
 - ✅ #6 — Date range start > end not validated
 - ✅ #7 — CultureInfo inconsistency in Double/Float parsing
+- ✅ #8 — SQL injection risk via FormattableString field name replacement
+- ✅ #9 — Cache reflection method lookups (performance)
 - ✅ #12 — Null semantics in nullable column sort coalescing
 - ✅ #13 — ReDoS risk in regex patterns (Regex.Escape + startup validation)
 - ✅ #14 — Empty IN operator values not rejected
@@ -689,8 +695,6 @@ public static Pagin8StatusCode Pagin8_InvalidLimit = new()
 - ✅ #17 — No limit value range check
 
 ### Open
-- 🟠 #8 — SQL injection risk via FormattableString field name replacement
-- 🟡 #9 — Cache reflection method lookups (performance, optional)
 - 🔵 #10 — LINQ visitor nested filtering not implemented (hard, backlog)
 - 🔵 #11 — JSON path IN support not implemented (hard, backlog)
 

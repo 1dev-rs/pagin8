@@ -13,6 +13,7 @@ using AspNet.Transliterator;
 using InterpolatedSql.SqlBuilders;
 using Pagin8.Internal.Configuration;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -402,6 +403,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     private void HandleJsonArrayFilter(NestedFilterToken token, QueryBuilderResult result, ColumnInfo columnInfo)
     {
         result.Builder += $"EXISTS (";
+        ValidateJsonFieldName(token.Field);
         var formattedArrayQuery = FormattableStringFactory.Create(BaseJsonArrayQuery.ToString().Replace("/**field**/", token.Field));
         var innerBuilder = new QueryBuilder(result.Builder.DbConnection, formattedArrayQuery);
         var innerResult = new QueryBuilderResult { Builder = innerBuilder };
@@ -964,15 +966,38 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
         throw new ArgumentException("Unsupported array type.");
     }
 
+    private static readonly ConcurrentDictionary<(Type TokenType, Type EntityType), MethodInfo> _methodCache = new();
+
     private void DynamicVisit(Token token, QueryBuilderResult result, Type type)
     {
-        var method = GetType().GetMethod("Visit", BindingFlags.Public | BindingFlags.Instance, null, [token.GetType(), typeof(QueryBuilderResult)], null) ?? throw new InvalidOperationException("Visit method not found.");
-        var genericMethod = method.MakeGenericMethod(type);
+        var key = (token.GetType(), type);
+        var genericMethod = _methodCache.GetOrAdd(key, k =>
+        {
+            var method = GetType().GetMethod("Visit", BindingFlags.Public | BindingFlags.Instance, null,
+                [k.TokenType, typeof(QueryBuilderResult)], null)
+                ?? throw new InvalidOperationException($"Visit method not found for {k.TokenType.Name}.");
+            return method.MakeGenericMethod(k.EntityType);
+        });
 
         var invokeResult = genericMethod.Invoke(this, [token, result]);
         if (invokeResult is not QueryBuilderResult)
         {
             throw new InvalidOperationException("The invoked Visit method returned null or an unexpected type.");
+        }
+    }
+
+    private static void ValidateJsonFieldName(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_TokenFieldInvalid.Code, "JSON field name cannot be empty.");
+
+        if (!char.IsLetter(fieldName[0]) && fieldName[0] != '_')
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_TokenFieldInvalid.Code, $"Invalid JSON field name: '{fieldName}'.");
+
+        foreach (var c in fieldName)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '_' && c != '.')
+                throw new Pagin8Exception(Pagin8StatusCode.Pagin8_TokenFieldInvalid.Code, $"Invalid JSON field name: '{fieldName}'.");
         }
     }
 
