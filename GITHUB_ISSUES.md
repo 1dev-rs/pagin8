@@ -4,6 +4,8 @@
 
 ### Issue #5: IsToken Negation Logic Bug - Incorrect Empty/Non-Empty Filtering
 
+**Status:** ✅ RESOLVED — `AppendEmptyQueryConditions` refactored with explicit conditional branches in both `NpgsqlTokenVisitor` and `SqlServerTokenVisitor`.
+
 **Labels:** `bug`, `priority:high`, `phase-2`
 
 **Description:**
@@ -87,6 +89,8 @@ public static Pagin8StatusCode Pagin8_InvalidDateRange = new()
 ---
 
 ### Issue #7: CultureInfo Inconsistency in Type Conversion (Double/Float)
+
+**Status:** ✅ RESOLVED — `double.TryParse` updated to use `NumberStyles.Float, CultureInfo.InvariantCulture` in `NpgsqlTokenVisitor`, `SqlServerTokenVisitor`, and `LinqTokenVisitor`.
 
 **Labels:** `bug`, `priority:high`, `phase-2`
 
@@ -345,6 +349,8 @@ public static void ValidateConfiguration()
 
 ### Issue #14: Validation - Empty IN Operator Values Not Rejected
 
+**Status:** ✅ RESOLVED — `InTokenizationStrategy` now validates non-empty value list and rejects blank entries, throwing `Pagin8Exception(Pagin8_InvalidIn)`.
+
 **Labels:** `enhancement`, `priority:medium`, `phase-3`
 
 **Description:**
@@ -392,6 +398,8 @@ if (values.Any(string.IsNullOrWhiteSpace))
 ---
 
 ### Issue #15: Performance - Unnecessary List Materialization in Standardize()
+
+**Status:** ✅ RESOLVED — Removed `.ToList()` from `TokenizationService.Standardize()`; smart materialization (`tokens as List<Token> ?? tokens.ToList()`) moved into `Tokenizer.RevertToQueryString()`.
 
 **Labels:** `performance`, `priority:medium`, `phase-3`
 
@@ -554,6 +562,8 @@ Then update `NpgsqlTokenVisitor.Visit<T>(InToken token, ...)` to handle JSON pat
 
 ### Issue #16: UX - Guard.AgainstNull Missing Parameter Name for Better Debugging
 
+**Status:** ✅ RESOLVED — `Guard.AgainstNull` updated with `[CallerArgumentExpression(nameof(value))]` for automatic parameter name capture.
+
 **Labels:** `enhancement`, `priority:low`, `phase-4`
 
 **Description:**
@@ -597,6 +607,8 @@ Guard.AgainstNull(myParameter);
 ---
 
 ### Issue #17: Validation - No Limit Value Range Check (negative/zero limits)
+
+**Status:** ✅ RESOLVED — Both `NpgsqlTokenVisitor` and `SqlServerTokenVisitor` now throw `Pagin8Exception(Pagin8_InvalidLimit)` when `token.Value <= 0`.
 
 **Labels:** `enhancement`, `priority:low`, `phase-4`
 
@@ -657,7 +669,24 @@ public static Pagin8StatusCode Pagin8_InvalidLimit = new()
 
 ## Summary
 
-**Total Issues:** 12
+**Total Issues:** 12 (6 resolved, 6 open)
+
+### Resolved
+- ✅ #5 — IsToken negation logic bug
+- ✅ #7 — CultureInfo inconsistency in Double/Float parsing
+- ✅ #14 — Empty IN operator values not rejected
+- ✅ #15 — Unnecessary `ToList()` in `Standardize()`
+- ✅ #16 — `Guard.AgainstNull` missing parameter name
+- ✅ #17 — No limit value range check
+
+### Open
+- 🔴 #6 — Date range validation (start ≤ end)
+- 🟠 #8 — SQL injection risk via FormattableString field name
+- 🟡 #9 — Cache reflection method lookups (performance)
+- 🟡 #12 — Null semantics in sort coalescing
+- 🟡 #13 — ReDoS risk in regex pattern
+- 🔵 #10 — LINQ visitor nested filtering not implemented
+- 🔵 #11 — JSON path IN support not implemented
 
 ### By Phase
 - **Phase 2 (High Priority):** 5 issues (~10 hours)
