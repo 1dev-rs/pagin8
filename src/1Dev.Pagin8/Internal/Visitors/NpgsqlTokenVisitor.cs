@@ -371,6 +371,14 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     private void HandleJsonArrayFilter(NestedFilterToken token, QueryBuilderResult result, ColumnInfo columnInfo)
     {
+        if (token.Tokens.All(t => t is ArrayOperationToken))
+        {
+            result.Builder += $"(";
+            AppendChildTokens(token, result, columnInfo.Type);
+            result.Builder += $")";
+            return;
+        }
+
         result.Builder += $"EXISTS (";
         var formattedArrayQuery = FormattableStringFactory.Create(BaseJsonArrayQuery.ToString().Replace("/**field**/", token.Field));
         var innerBuilder = new QueryBuilder(result.Builder.DbConnection, formattedArrayQuery);
