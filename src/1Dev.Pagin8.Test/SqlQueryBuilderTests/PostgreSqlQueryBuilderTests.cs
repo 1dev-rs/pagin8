@@ -235,6 +235,8 @@ public class PostgreSqlQueryBuilderTests
 
         sql.Should().Contain("tariffAmounts @> @p0::jsonb");
         sql.Should().NotContain("ARRAY(SELECT");
+        sql.Should().NotContain("EXISTS");
+        sql.Should().NotContain("jsonb_array_elements");
         @params[0].Argument.Should().Be("[{\"tariffNumber\": 4}]");
     }
 
