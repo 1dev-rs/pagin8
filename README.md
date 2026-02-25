@@ -205,8 +205,13 @@ When `with` is used, it unwraps the complex type (`userTags`) and applies the sp
 
 ### Supported Operators
 
-Currently, only two operators are supported for nested filtering:
+All standard Pagin8 operators are supported inside nested filtering conditions:
 
+-   `eq`, `gt`, `lt`, `gte`, `lte`: Comparison operators
+-   `like`, `cs`, `stw`, `enw`: String operators (with `not.` prefix)
+-   `in`, `not.in`: Array membership
+-   `is`, `not.is`: Boolean / null / empty checks
+-   `ago`, `for`: Date range operators
 -   `incl`: Includes values that match all of the provided values.
 -   `excl`: Excludes values that match any of the provided values.
 
@@ -223,10 +228,6 @@ This filters `userTags` to include values where `name` is both `test1` and `test
 Note that if you want to filter out some special character, like `#`, it must be decoded and sent like `%23`:
 
 `userTags.with=(colorCode.incl(%23FF0000))`
-
-### Future Enhancements
-
-Currently, only the `incl` and `excl` operators are supported for nested filtering. However,  expanding the capabilities of the filtering system to include support for all other operators is in progress.
 
 ## Date Range Operator
 
