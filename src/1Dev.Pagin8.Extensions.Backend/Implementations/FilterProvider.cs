@@ -17,17 +17,20 @@ public class FilterProvider : IFilterProvider
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ISqlQueryBuilder _sqlQueryBuilder;
+    private readonly int? _defaultCommandTimeout;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FilterProvider"/> class.
     /// </summary>
     /// <param name="connectionFactory">The database connection factory.</param>
     /// <param name="sqlQueryBuilder">The Pagin8 SQL query builder.</param>
-    /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
-    public FilterProvider(IDbConnectionFactory connectionFactory, ISqlQueryBuilder sqlQueryBuilder)
+    /// <param name="defaultCommandTimeout">Optional default SQL command timeout in seconds applied to every query. Null uses the Dapper default (30 s).</param>
+    /// <exception cref="ArgumentNullException">Thrown when any required parameter is null.</exception>
+    public FilterProvider(IDbConnectionFactory connectionFactory, ISqlQueryBuilder sqlQueryBuilder, int? defaultCommandTimeout = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _sqlQueryBuilder = sqlQueryBuilder ?? throw new ArgumentNullException(nameof(sqlQueryBuilder));
+        _defaultCommandTimeout = defaultCommandTimeout;
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -38,9 +41,10 @@ public class FilterProvider : IFilterProvider
     /// <summary>
     /// Executes a filtered query and returns paged results.
     /// </summary>
-    public async Task<PagedResults<TResponse>> GetAsync<TResponse>(string viewName, FilteredDataQuery query)
+    public async Task<PagedResults<TResponse>> GetAsync<TResponse>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
         where TResponse : class
     {
+        var timeout = commandTimeout ?? _defaultCommandTimeout;
         using var connection = _connectionFactory.Create();
 
         var inputParams = QueryInputParameters.Create(
@@ -77,18 +81,18 @@ public class FilterProvider : IFilterProvider
             // isJson=true: the SQL is wrapped in SELECT COALESCE(json_agg(items), '[]') FROM (...) items
             // This returns ONE row with ONE column — a raw JSON array string.
             // QueryAsync<string>() reads it, then we deserialize into the typed collection.
-            var json = await buildResult.Builder.QueryFirstOrDefaultAsync<string>();
+            var json = await buildResult.Builder.QueryFirstOrDefaultAsync<string>(commandTimeout: timeout);
             data = string.IsNullOrEmpty(json) || json == "[]"
                 ? []
                 : JsonSerializer.Deserialize<IEnumerable<TResponse>>(json, JsonOptions) ?? [];
         }
         else
         {
-            data = await buildResult.Builder.QueryAsync<TResponse>();
+            data = await buildResult.Builder.QueryAsync<TResponse>(commandTimeout: timeout);
         }
 
         var count = buildResult.Meta.ShowCount
-            ? await GetCountInternalAsync<TResponse>(connection, viewName, query)
+            ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout)
             : 0;
 
         return new PagedResults<TResponse>
@@ -102,17 +106,19 @@ public class FilterProvider : IFilterProvider
     /// <summary>
     /// Gets the count of rows matching the filter.
     /// </summary>
-    public async Task<int> GetCountAsync<TResponse>(string viewName, FilteredDataQuery query)
+    public async Task<int> GetCountAsync<TResponse>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
         where TResponse : class
     {
+        var timeout = commandTimeout ?? _defaultCommandTimeout;
         using var connection = _connectionFactory.Create();
-        return await GetCountInternalAsync<TResponse>(connection, viewName, query);
+        return await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout);
     }
 
     private async Task<int> GetCountInternalAsync<TResponse>(
         IDbConnection connection,
         string viewName,
-        FilteredDataQuery query) where TResponse : class
+        FilteredDataQuery query,
+        int? commandTimeout = null) where TResponse : class
     {
         var inputParams = QueryInputParameters.Create(
             sql: viewName,
@@ -134,7 +140,7 @@ public class FilterProvider : IFilterProvider
         if (buildResult.Builder is null)
             return 0;
 
-        return await buildResult.Builder.ExecuteScalarAsync<int>();
+        return await buildResult.Builder.ExecuteScalarAsync<int>(commandTimeout: commandTimeout);
     }
 
     private static FormattableString GetBaseQuery(string viewName)

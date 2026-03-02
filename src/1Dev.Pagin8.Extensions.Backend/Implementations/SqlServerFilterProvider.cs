@@ -9,5 +9,6 @@ namespace _1Dev.Pagin8.Extensions.Backend.Implementations;
 /// </summary>
 public class SqlServerFilterProvider(
     ISqlServerDbConnectionFactory connectionFactory,
-    ISqlServerSqlQueryBuilder sqlQueryBuilder)
-    : FilterProvider(connectionFactory, sqlQueryBuilder), ISqlServerFilterProvider;
+    ISqlServerSqlQueryBuilder sqlQueryBuilder,
+    int? defaultCommandTimeout = null)
+    : FilterProvider(connectionFactory, sqlQueryBuilder, defaultCommandTimeout), ISqlServerFilterProvider;

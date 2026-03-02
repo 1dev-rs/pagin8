@@ -67,7 +67,9 @@ namespace _1Dev.Pagin8.Extensions.Backend
             var sqlServerVisitor  = new SqlServerTokenVisitor(metadata, dateProcessor);
             var sqlServerBuilder  = new SqlServerSqlQueryBuilder(tokenizationService, sqlServerVisitor);
 
-            return new SqlServerFilterProvider(factory, sqlServerBuilder);
+            // Read Command Timeout directly from the factory — no connection string parsing needed.
+            // Set it via the commandTimeout parameter when registering with AddPagin8BackendSqlServer().
+            return new SqlServerFilterProvider(factory, sqlServerBuilder, factory.CommandTimeout);
         }
     }
 }

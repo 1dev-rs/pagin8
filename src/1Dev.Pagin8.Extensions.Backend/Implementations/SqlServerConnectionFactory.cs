@@ -12,17 +12,22 @@ public class SqlServerConnectionFactory : IDbConnectionFactory, ISqlServerDbConn
 {
     private readonly string _connectionString;
 
+    /// <inheritdoc />
+    public int? CommandTimeout { get; }
+
     /// <summary>
     /// Initializes a new instance of the <see cref="SqlServerConnectionFactory"/> class.
     /// </summary>
     /// <param name="connectionString">The connection string.</param>
+    /// <param name="commandTimeout">Optional default command timeout in seconds. Null uses Dapper's default (30 s).</param>
     /// <exception cref="ArgumentNullException">Thrown when connection string is null or empty.</exception>
-    public SqlServerConnectionFactory(string connectionString)
+    public SqlServerConnectionFactory(string connectionString, int? commandTimeout = null)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new ArgumentNullException(nameof(connectionString));
 
         _connectionString = connectionString;
+        CommandTimeout = commandTimeout;
     }
 
     /// <summary>

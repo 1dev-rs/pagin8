@@ -99,14 +99,15 @@ public static class ServiceCollectionExtensions
     /// <exception cref="InvalidOperationException">Thrown when core Pagin8 services are not registered.</exception>
     public static IServiceCollection AddPagin8BackendSqlServer(
         this IServiceCollection services,
-        string connectionString)
+        string connectionString,
+        int? commandTimeout = null)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new ArgumentNullException(nameof(connectionString));
 
         // Register SQL Server connection factory
         services.AddSingleton<ISqlServerDbConnectionFactory>(
-            new SqlServerConnectionFactory(connectionString));
+            new SqlServerConnectionFactory(connectionString, commandTimeout));
 
         // Register remaining SQL Server runtime services (query builder + filter provider)
         RegisterSqlServerRuntimeServices(services);
@@ -150,7 +151,8 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddPagin8BackendSqlServer(
         this IServiceCollection services,
         string name,
-        string connectionString)
+        string connectionString,
+        int? commandTimeout = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentNullException(nameof(name));
@@ -169,7 +171,7 @@ public static class ServiceCollectionExtensions
         if (existingDescriptor?.ImplementationInstance is SqlServerDbConnectionFactoryProvider existingProvider)
         {
             // Reuse the already-registered instance and add the new named factory to it.
-            existingProvider.Add(name, new SqlServerConnectionFactory(connectionString));
+            existingProvider.Add(name, new SqlServerConnectionFactory(connectionString, commandTimeout));
         }
         else
         {
@@ -178,7 +180,7 @@ public static class ServiceCollectionExtensions
             foreach (var d in stale) services.Remove(d);
 
             var provider = new SqlServerDbConnectionFactoryProvider();
-            provider.Add(name, new SqlServerConnectionFactory(connectionString));
+            provider.Add(name, new SqlServerConnectionFactory(connectionString, commandTimeout));
             services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(provider);
         }
 
