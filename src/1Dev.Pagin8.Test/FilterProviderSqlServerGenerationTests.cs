@@ -239,6 +239,17 @@ public class FilterProviderSqlServerGenerationTests
         p.Should().Contain(sp => sp.Argument.Equals(1_000_000));
     }
 
+    [Fact]
+    public void Should_NotEmitOrderBySelectNull_WhenSortIsExplicit()
+    {
+        // When an explicit sort is present the fallback ORDER BY (SELECT NULL) must NOT appear.
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("paging=(sort(id.asc))"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("ORDER BY id ASC");
+        sql.Should().NotContain("ORDER BY (SELECT NULL)");
+    }
+
     // -----------------------------------------------------------------------
     // isJson flag — wrapper is emitted by SqlQueryBuilder (not the visitor),
     // so json_agg wrapping applies to both PostgreSQL and SQL Server.

@@ -122,6 +122,13 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
     public QueryBuilderResult Visit<T>(PagingToken token, QueryBuilderResult result) where T : class
     {
         token.Sort?.Accept<T>(this, result);
+
+        // SQL Server requires ORDER BY before OFFSET...FETCH NEXT.
+        // When no sort is specified but a limit is, emit a no-op ORDER BY so the
+        // generated SQL stays valid.
+        if (token.Sort is null && token.Limit is not null)
+            result.Builder += $"ORDER BY (SELECT NULL)";
+
         token.Limit?.Accept<T>(this, result);
         token.Count?.Accept<T>(this, result);
 
@@ -248,8 +255,32 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
     private static FormattableString BuildQuery(string column, TypeCode typeCode, ComparisonToken token, bool isText, DbComparison comparison)
     {
         return typeCode == TypeCode.DateTime
-            ? $"CAST({column:raw} AS DATE) {token.GetSqlOperator(isText):raw} CAST({comparison.Value} AS DATE)"
-            : (FormattableString)$"{column:raw} {token.GetSqlOperator(isText):raw} {comparison.Value} {TryEscapeSpecialChars(token.Operator):raw}";
+            ? $"CAST({column:raw} AS DATE) {GetSqlServerSqlOperator(token, isText):raw} CAST({comparison.Value} AS DATE)"
+            : (FormattableString)$"{column:raw} {GetSqlServerSqlOperator(token, isText):raw} {comparison.Value} {TryEscapeSpecialChars(token.Operator):raw}";
+    }
+
+    /// <summary>
+    /// Returns the correct SQL comparison operator for SQL Server, bypassing the global
+    /// <c>Pagin8Runtime.Config.DatabaseType</c> flag that the shared <see cref="SqlOperatorProcessor"/>
+    /// uses. When the app is configured for PostgreSQL (main DB) but also has an SQL Server
+    /// connection (archive DB), the shared helpers would return "ILIKE" — which is invalid on
+    /// SQL Server. This method always returns LIKE / NOT LIKE for text comparisons.
+    /// </summary>
+    private static string GetSqlServerSqlOperator(ComparisonToken token, bool isText)
+    {
+        return token.Operator switch
+        {
+            // LIKE-family operators: always use SQL Server syntax
+            ComparisonOperator.Like      => token.IsNegated ? "NOT LIKE" : "LIKE",
+            ComparisonOperator.Contains  => token.IsNegated ? "NOT LIKE" : "LIKE",
+            ComparisonOperator.StartsWith => token.IsNegated ? "NOT LIKE" : "LIKE",
+            ComparisonOperator.EndsWith  => token.IsNegated ? "NOT LIKE" : "LIKE",
+            // Equals on text: PostgreSQL uses ILIKE, SQL Server uses LIKE (collation-based CI)
+            ComparisonOperator.Equals when isText => token.IsNegated ? "NOT LIKE" : "LIKE",
+            // All other operators (=, >, <, >=, <=, IS, IN, BETWEEN) are the same across
+            // database engines — the shared helper is safe for these.
+            _ => token.GetSqlOperator(isText)
+        };
     }
 
     private void BuildSortConditions<T>(QueryBuilder builder, IReadOnlyList<SortExpression> sortExpressions) where T : class
@@ -392,7 +423,16 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
     private static void AppendValueQueryCondition(QueryBuilderResult result, IsToken token, string leftHandSide, string negation)
     {
         var value = bool.Parse(token.Value);
-        FormattableString query = $"{leftHandSide:raw} IS {negation:raw} {value:raw}";
+        // SQL Server does not support the "IS TRUE"/"IS FALSE" syntax — only "IS NULL"/"IS NOT NULL" work.
+        // Translate: IS TRUE → = 1, IS NOT TRUE → <> 1, IS FALSE → = 0, IS NOT FALSE → <> 0.
+        var (sqlOp, bitValue) = (token.IsNegated, value) switch
+        {
+            (false, true)  => ("=",  1),   // IS TRUE
+            (true,  true)  => ("<>", 1),   // IS NOT TRUE
+            (false, false) => ("=",  0),   // IS FALSE
+            (true,  false) => ("<>", 0),   // IS NOT FALSE
+        };
+        FormattableString query = $"{leftHandSide:raw} {sqlOp:raw} {bitValue}";
         result.Builder += query;
     }
 
@@ -465,8 +505,10 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
                 return -1;
             case TypeCode.DateTime:
                 return DateTime.MinValue;
+            // SQL Server has no boolean literal; 0 (int) is the BIT-compatible fallback
+            // for ISNULL(boolCol, <coalesce>) so it's never formatted as "False" via ToString().
             case TypeCode.Boolean:
-                return false;
+                return 0;
             default:
                 throw new NotSupportedException($"Coalesce fallback value does not exist for type code: {typeCode}");
         }
@@ -635,7 +677,9 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? intValue : throw new ArgumentException($"Cannot format value {value} as Int32"),
             TypeCode.Int64 => long.TryParse(value, out var longValue) ? longValue : throw new ArgumentException($"Cannot format value {value} as Int64"),
             TypeCode.Double => double.TryParse(value, out var doubleValue) ? doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
-            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
+            // SQL Server has no boolean literal — use BIT (1/0) so the value is never formatted
+            // as C# "True"/"False" by the dynamic/.ToString() path in InterpolatedSql.
+            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (boolValue ? 1 : 0) : throw new ArgumentException($"Cannot format value {value} as Boolean"),
             TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToLowerBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
             TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
             _ => throw new ArgumentException($"Cannot format values for TypeCode {typeCode}")
@@ -716,7 +760,7 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? (int?)intValue : throw new ArgumentException($"Cannot format value {value} as Int32"),
             TypeCode.Int64 => long.TryParse(value, out var longValue) ? (long?)longValue : throw new ArgumentException($"Cannot format value {value} as Int64"),
             TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? (double?)doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
-            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (bool?)boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
+            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (int?)(boolValue ? 1 : 0) : throw new ArgumentException($"Cannot format value {value} as Boolean"),
             TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
             TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? (decimal?)decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
             _ => throw new ArgumentException($"Cannot format values for TypeCode {typeCode}")

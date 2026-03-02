@@ -4,6 +4,10 @@ using _1Dev.Pagin8.Extensions.Backend.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using _1Dev.Pagin8.Extensions.Backend.Implementations;
 using _1Dev.Pagin8;
+using _1Dev.Pagin8.Internal;
+using _1Dev.Pagin8.Internal.DateProcessor;
+using _1Dev.Pagin8.Internal.Tokenizer.Contracts;
+using _1Dev.Pagin8.Internal.Visitors;
 
 namespace _1Dev.Pagin8.Extensions.Backend
 {
@@ -53,9 +57,17 @@ namespace _1Dev.Pagin8.Extensions.Backend
             if (factory == null)
                 throw new InvalidOperationException($"SQL Server provider with name '{name}' was not registered.");
 
-            var sqlQueryBuilder = _sp.GetRequiredService<ISqlServerSqlQueryBuilder>();
+            // Build SqlServerTokenVisitor + SqlServerSqlQueryBuilder directly so that no DI
+            // misconfiguration (e.g. the global ISqlQueryBuilder being PostgreSQL) can leak
+            // the NpgsqlTokenVisitor into SQL Server queries.
+            var tokenizationService = _sp.GetRequiredService<ITokenizationService>();
+            var metadata            = _sp.GetRequiredService<IPagin8MetadataProvider>();
+            var dateProcessor       = _sp.GetRequiredService<IDateProcessor>();
 
-            return new SqlServerFilterProvider(factory, sqlQueryBuilder);
+            var sqlServerVisitor  = new SqlServerTokenVisitor(metadata, dateProcessor);
+            var sqlServerBuilder  = new SqlServerSqlQueryBuilder(tokenizationService, sqlServerVisitor);
+
+            return new SqlServerFilterProvider(factory, sqlServerBuilder);
         }
     }
 }
