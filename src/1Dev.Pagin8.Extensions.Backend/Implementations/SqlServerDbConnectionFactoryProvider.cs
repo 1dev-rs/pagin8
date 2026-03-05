@@ -39,11 +39,14 @@ namespace _1Dev.Pagin8.Extensions.Backend
 
     /// <summary>
     /// Factory that creates SQL Server filter providers for a given named connection.
+    /// Instances are cached per named provider because the visitor, builder, and filter provider
+    /// are all stateless for a fixed connection factory.
     /// </summary>
     public class SqlServerFilterProviderFactory : ISqlServerFilterProviderFactory
     {
         private readonly IServiceProvider _sp;
         private readonly ISqlServerDbConnectionFactoryProvider _provider;
+        private readonly ConcurrentDictionary<string, ISqlServerFilterProvider> _cache = new();
 
         public SqlServerFilterProviderFactory(IServiceProvider sp, ISqlServerDbConnectionFactoryProvider provider)
         {
@@ -51,7 +54,10 @@ namespace _1Dev.Pagin8.Extensions.Backend
             _provider = provider ?? throw new ArgumentNullException(nameof(provider));
         }
 
-        public ISqlServerFilterProvider Create(string name)
+        public ISqlServerFilterProvider Create(string name) =>
+            _cache.GetOrAdd(name, BuildProvider);
+
+        private ISqlServerFilterProvider BuildProvider(string name)
         {
             var factory = _provider.Get(name) ?? _provider.Get(SqlServerConstants.DefaultProviderName);
             if (factory == null)
