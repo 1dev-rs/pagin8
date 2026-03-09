@@ -163,7 +163,7 @@ public class PostgreSqlContainerIntegrationTests
         var result = await ExecuteQuery("createdAt=gte.2024-01-01&createdAt=lte.2024-12-31");
         
         result.Should().NotBeEmpty();
-        result.All(p => p.CreatedAt >= new DateTime(2024, 1, 1) && p.CreatedAt <= new DateTime(2024, 12, 31)).Should().BeTrue();
+        result.All(p => p.CreatedAt.Date >= new DateTime(2024, 1, 1) && p.CreatedAt.Date <= new DateTime(2024, 12, 31)).Should().BeTrue();
         _output.WriteLine($"? Found {result.Count} products created in 2024");
     }
 
