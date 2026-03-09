@@ -59,7 +59,7 @@ namespace _1Dev.Pagin8.Extensions.Backend
 
         private ISqlServerFilterProvider BuildProvider(string name)
         {
-            var factory = _provider.Get(name) ?? _provider.Get(SqlServerConstants.DefaultProviderName);
+            var factory = _provider.Get(name);
             if (factory == null)
                 throw new InvalidOperationException($"SQL Server provider with name '{name}' was not registered.");
 

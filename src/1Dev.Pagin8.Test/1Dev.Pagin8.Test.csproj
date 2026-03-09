@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\1Dev.Pagin8\1Dev.Pagin8.csproj" />
+    <ProjectReference Include="..\1Dev.Pagin8.Extensions.Backend\1Dev.Pagin8.Extensions.Backend.csproj" />
   </ItemGroup>
 
   <ItemGroup>

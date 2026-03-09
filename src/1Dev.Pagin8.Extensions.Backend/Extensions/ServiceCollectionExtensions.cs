@@ -105,9 +105,12 @@ public static class ServiceCollectionExtensions
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new ArgumentNullException(nameof(connectionString));
 
+        EnsurePagin8CoreRegistered(services);
+
         // Register SQL Server connection factory
-        services.AddSingleton<ISqlServerDbConnectionFactory>(
-            new SqlServerConnectionFactory(connectionString, commandTimeout));
+        var factory = new SqlServerConnectionFactory(connectionString, commandTimeout);
+        services.AddSingleton<ISqlServerDbConnectionFactory>(factory);
+        RegisterOrUpdateSqlServerProvider(services, SqlServerConstants.DefaultProviderName, factory);
 
         // Register remaining SQL Server runtime services (query builder + filter provider)
         RegisterSqlServerRuntimeServices(services);
@@ -125,20 +128,13 @@ public static class ServiceCollectionExtensions
         if (connectionFactoryFunc == null)
             throw new ArgumentNullException(nameof(connectionFactoryFunc));
 
-        // Register the un-named factory instance as before
-        services.AddSingleton<ISqlServerDbConnectionFactory>(sp => connectionFactoryFunc());
+        EnsurePagin8CoreRegistered(services);
 
-        // Also ensure the named provider mapping contains the default provider
-        services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(sp =>
-        {
-            var provider = new SqlServerDbConnectionFactoryProvider();
-            var existing = sp.GetService<ISqlServerDbConnectionFactory>();
-            if (existing != null)
-            {
-                provider.Add(SqlServerConstants.DefaultProviderName, existing);
-            }
-            return provider;
-        });
+        var factory = connectionFactoryFunc() ?? throw new InvalidOperationException("SQL Server connection factory delegate returned null.");
+
+        // Register the un-named factory instance as before
+        services.AddSingleton<ISqlServerDbConnectionFactory>(factory);
+        RegisterOrUpdateSqlServerProvider(services, SqlServerConstants.DefaultProviderName, factory);
 
         RegisterSqlServerRuntimeServices(services);
 
@@ -164,25 +160,7 @@ public static class ServiceCollectionExtensions
 
         // Accumulate named providers at registration time (not resolve time) to avoid
         // circular dependency and multiple-descriptor problems when called more than once.
-        var existingDescriptor = services.FirstOrDefault(
-            s => s.ServiceType == typeof(ISqlServerDbConnectionFactoryProvider)
-              && s.ImplementationInstance is SqlServerDbConnectionFactoryProvider);
-
-        if (existingDescriptor?.ImplementationInstance is SqlServerDbConnectionFactoryProvider existingProvider)
-        {
-            // Reuse the already-registered instance and add the new named factory to it.
-            existingProvider.Add(name, new SqlServerConnectionFactory(connectionString, commandTimeout));
-        }
-        else
-        {
-            // First call: remove any factory-based descriptors and register a concrete instance.
-            var stale = services.Where(s => s.ServiceType == typeof(ISqlServerDbConnectionFactoryProvider)).ToList();
-            foreach (var d in stale) services.Remove(d);
-
-            var provider = new SqlServerDbConnectionFactoryProvider();
-            provider.Add(name, new SqlServerConnectionFactory(connectionString, commandTimeout));
-            services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(provider);
-        }
+        RegisterOrUpdateSqlServerProvider(services, name, new SqlServerConnectionFactory(connectionString, commandTimeout));
 
         // Register SQL Server runtime services (query builder + filter provider factory)
         RegisterSqlServerRuntimeServices(services);
@@ -205,12 +183,8 @@ public static class ServiceCollectionExtensions
 
         EnsurePagin8CoreRegistered(services);
 
-        services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(sp =>
-        {
-            var existingProvider = sp.GetService<ISqlServerDbConnectionFactoryProvider>() ?? new SqlServerDbConnectionFactoryProvider();
-            existingProvider.Add(name, connectionFactoryFunc());
-            return existingProvider;
-        });
+        var factory = connectionFactoryFunc() ?? throw new InvalidOperationException("SQL Server connection factory delegate returned null.");
+        RegisterOrUpdateSqlServerProvider(services, name, factory);
 
         RegisterSqlServerRuntimeServices(services);
 
@@ -224,7 +198,11 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services)
         where TConnectionFactory : class, ISqlServerDbConnectionFactory
     {
-        services.AddSingleton<ISqlServerDbConnectionFactory, TConnectionFactory>();
+        EnsurePagin8CoreRegistered(services);
+
+        services.AddSingleton<TConnectionFactory>();
+        services.AddSingleton<ISqlServerDbConnectionFactory>(sp => sp.GetRequiredService<TConnectionFactory>());
+        RegisterDefaultSqlServerProvider<TConnectionFactory>(services);
 
         RegisterSqlServerRuntimeServices(services);
 
@@ -256,6 +234,55 @@ public static class ServiceCollectionExtensions
         {
             var factory = sp.GetRequiredService<ISqlServerFilterProviderFactory>();
             return factory.Create(SqlServerConstants.DefaultProviderName);
+        });
+    }
+
+    private static void RegisterOrUpdateSqlServerProvider(
+        IServiceCollection services,
+        string name,
+        ISqlServerDbConnectionFactory factory)
+    {
+        var existingDescriptor = services.FirstOrDefault(
+            s => s.ServiceType == typeof(ISqlServerDbConnectionFactoryProvider)
+              && s.ImplementationInstance is SqlServerDbConnectionFactoryProvider);
+
+        if (existingDescriptor?.ImplementationInstance is SqlServerDbConnectionFactoryProvider existingProvider)
+        {
+            existingProvider.Add(name, factory);
+            return;
+        }
+
+        var staleDescriptors = services.Where(s => s.ServiceType == typeof(ISqlServerDbConnectionFactoryProvider)).ToList();
+        foreach (var descriptor in staleDescriptors)
+        {
+            services.Remove(descriptor);
+        }
+
+        var provider = new SqlServerDbConnectionFactoryProvider();
+        provider.Add(name, factory);
+        services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(provider);
+    }
+
+    private static void RegisterDefaultSqlServerProvider<TConnectionFactory>(IServiceCollection services)
+        where TConnectionFactory : class, ISqlServerDbConnectionFactory
+    {
+        var existingDescriptor = services.FirstOrDefault(
+            s => s.ServiceType == typeof(ISqlServerDbConnectionFactoryProvider)
+              && s.ImplementationInstance is SqlServerDbConnectionFactoryProvider);
+
+        var existingProvider = existingDescriptor?.ImplementationInstance as SqlServerDbConnectionFactoryProvider;
+
+        var staleDescriptors = services.Where(s => s.ServiceType == typeof(ISqlServerDbConnectionFactoryProvider)).ToList();
+        foreach (var descriptor in staleDescriptors)
+        {
+            services.Remove(descriptor);
+        }
+
+        services.AddSingleton<ISqlServerDbConnectionFactoryProvider>(sp =>
+        {
+            var provider = existingProvider ?? new SqlServerDbConnectionFactoryProvider();
+            provider.Add(SqlServerConstants.DefaultProviderName, sp.GetRequiredService<TConnectionFactory>());
+            return provider;
         });
     }
 
