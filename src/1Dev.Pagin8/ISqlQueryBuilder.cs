@@ -49,8 +49,8 @@ public interface ISqlQueryBuilder
     /// <description>Specifies whether the result should be wrapped in JSON format.</description>
     /// </item>
     /// <item>
-    /// <term>IsCount</term>
-    /// <description>Specifies whether the query is for counting records.</description>
+    /// <term>IgnorePaging</term>
+    /// <description>Specifies whether paging and select tokens should be ignored (used for count and aggregate queries).</description>
     /// </item>
     /// <item>
     /// <term>CtePrefix</term>
