@@ -1,12 +1,12 @@
-using System.Data;
-using System.Text.Json;
-using InterpolatedSql.Dapper;
-using _1Dev.Pagin8;
-using Dapper;
-using InterpolatedSql.Dapper.SqlBuilders;
-using _1Dev.Pagin8.Input;
 using _1Dev.Pagin8.Extensions.Backend.Interfaces;
 using _1Dev.Pagin8.Extensions.Backend.Models;
+using _1Dev.Pagin8.Input;
+using Attributes;
+using Dapper;
+using InterpolatedSql.Dapper;
+using System.Data;
+using System.Reflection;
+using System.Text.Json;
 
 namespace _1Dev.Pagin8.Extensions.Backend.Implementations;
 
@@ -143,9 +143,82 @@ public class FilterProvider : IFilterProvider
         return await buildResult.Builder.ExecuteScalarAsync<int>(commandTimeout: commandTimeout);
     }
 
+    /// <summary>
+    /// Gets aggregate values for properties decorated with any attribute named AggregateAttribute
+    /// that exposes an AggregateType property (convention-based, namespace-agnostic).
+    /// </summary>
+    public async Task<IDictionary<string, decimal>> GetAggregatesAsync<T>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
+        where T : class
+    {
+        var columns = typeof(T)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
+            .SelectMany(p => p.GetCustomAttributes()
+                .Where(a => a.GetType().Name == nameof(AggregateAttribute))
+                .Select(attr =>
+                {
+                    var aggTypeStr = attr.GetType().GetProperty("AggregateType")?.GetValue(attr)?.ToString() ?? "Sum";
+                    var func = aggTypeStr switch
+                    {
+                        "Sum"   => "SUM",
+                        "Count" => "COUNT",
+                        "Min"   => "MIN",
+                        "Max"   => "MAX",
+                        "Avg"   => "AVG",
+                        _       => "SUM"
+                    };
+                    return (Property: p, Func: func);
+                }))
+            .ToList();
+
+        if (columns.Count == 0)
+            return new Dictionary<string, decimal>();
+
+        var selectParts = columns.Select(x =>
+        {
+            var camelName = JsonNamingPolicy.CamelCase.ConvertName(x.Property.Name);
+            var alias = $"{camelName}{x.Func[0]}{x.Func[1..].ToLower()}";
+            return $"COALESCE({x.Func}({x.Property.Name}), 0) AS \"{alias}\"";
+        });
+
+        var selectClause = string.Join(", ", selectParts);
+        var timeout = commandTimeout ?? _defaultCommandTimeout;
+
+        using var connection = _connectionFactory.Create();
+
+        var inputParams = QueryInputParameters.Create(
+            sql: viewName,
+            queryString: query.QueryString,
+            defaultQueryString: query.DefaultQuery,
+            ignoreLimit: true,
+            isJson: false,
+            isCount: false
+        );
+
+        var qbParams = QueryBuilderParameters.Create(
+            connection: connection,
+            baseQuery: GetBaseAggregateQuery(viewName, selectClause),
+            inputParameters: inputParams
+        );
+
+        var buildResult = _sqlQueryBuilder.BuildSqlQuery<T>(qbParams);
+
+        if (buildResult.Builder is null)
+            return new Dictionary<string, decimal>();
+
+        var rows = await buildResult.Builder.QueryAsync<dynamic>(commandTimeout: timeout);
+        var row = rows.FirstOrDefault();
+        if (row is null) return new Dictionary<string, decimal>();
+
+        return ((IDictionary<string, object>)row)
+            .ToDictionary(kvp => kvp.Key, kvp => Convert.ToDecimal(kvp.Value ?? 0));
+    }
+
     private static FormattableString GetBaseQuery(string viewName)
         => $"/**select**/ FROM {viewName:raw} WHERE 1=1 /**filters**/";
 
     private static FormattableString GetBaseCountQuery(string viewName)
         => $"SELECT COUNT(*) FROM {viewName:raw} WHERE 1=1 /**filters**/";
+
+    private static FormattableString GetBaseAggregateQuery(string viewName, string selectClause)
+        => $"SELECT {selectClause:raw} FROM {viewName:raw} WHERE 1=1 /**filters**/";
 }
