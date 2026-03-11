@@ -191,7 +191,7 @@ public class FilterProvider : IFilterProvider
             defaultQueryString: query.DefaultQuery,
             ignoreLimit: true,
             isJson: false,
-            isCount: false
+            ignorePaging: false
         );
 
         var qbParams = QueryBuilderParameters.Create(

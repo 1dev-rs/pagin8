@@ -43,7 +43,7 @@ public class FilterProviderSqlServerGenerationTests
         string defaultQuery = "",
         bool   ignoreLimit  = false,
         bool   isJson       = false,
-        bool   isCount      = false)
+        bool   ignorePaging = false)
         => new()
         {
             InputParameters = QueryInputParameters.Create(
@@ -52,7 +52,7 @@ public class FilterProviderSqlServerGenerationTests
                 defaultQueryString: defaultQuery,
                 ignoreLimit:        ignoreLimit,
                 isJson:             isJson,
-                isCount:            isCount)
+                ignorePaging:       ignorePaging)
         };
 
     // -----------------------------------------------------------------------
@@ -282,7 +282,7 @@ public class FilterProviderSqlServerGenerationTests
     public void Should_NotContainFetchNext_WhenCountQueryRequested()
     {
         var result = _sut.BuildSqlQuery<TestEntity>(
-            Build("name=eq.Alice", isCount: true));
+            Build("name=eq.Alice", ignorePaging: true));
 
         var sql = result.Builder?.AsSql().Sql ?? string.Empty;
         sql.Should().NotContain("FETCH NEXT");

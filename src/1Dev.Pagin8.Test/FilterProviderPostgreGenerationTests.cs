@@ -43,7 +43,7 @@ public class FilterProviderPostgreGenerationTests
         string defaultQuery  = "",
         bool   ignoreLimit   = false,
         bool   isJson        = false,
-        bool   isCount       = false)
+        bool   ignorePaging  = false)
         => new()
         {
             InputParameters = QueryInputParameters.Create(
@@ -52,7 +52,7 @@ public class FilterProviderPostgreGenerationTests
                 defaultQueryString: defaultQuery,
                 ignoreLimit:        ignoreLimit,
                 isJson:             isJson,
-                isCount:            isCount)
+                ignorePaging:       ignorePaging)
         };
 
     // -----------------------------------------------------------------------
@@ -265,7 +265,7 @@ public class FilterProviderPostgreGenerationTests
     public void Should_NotContainLimit_WhenCountQueryRequested()
     {
         var result = _sut.BuildSqlQuery<TestEntity>(
-            Build("name=eq.Alice", isCount: true));
+            Build("name=eq.Alice", ignorePaging: true));
 
         // When BuildSqlQuery processes a count-only tokenisation the data builder
         // is null (ShowCount only) or the SQL has no LIMIT.
