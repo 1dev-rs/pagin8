@@ -26,7 +26,7 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
 
         UpdateQueryMeta(result, tokenizationResponse);
 
-        BuildQueryFromTokens<T>(result, tokenizationResponse.Tokens, input.IsCount);
+        BuildQueryFromTokens<T>(result, tokenizationResponse.Tokens, input.IgnorePaging);
 
         WrapQueryAsJsonIfNeeded(input, result);
 
@@ -63,7 +63,7 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
     {
         if (input.IsJson && result.Builder is not null)
         {
-            result.Builder = BuildJsonWrapper(result.Builder, input.CtePrefix, input.IsCount);
+            result.Builder = BuildJsonWrapper(result.Builder, input.CtePrefix, input.IgnorePaging);
         }
     }
 
@@ -87,7 +87,7 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
         result.Builder = null; // Skip fetching data when only count is requested
     }
 
-    private void BuildQueryFromTokens<T>(QueryBuilderResult result, IEnumerable<Token> tokens, bool isCount)
+    private void BuildQueryFromTokens<T>(QueryBuilderResult result, IEnumerable<Token> tokens, bool ignorePaging)
         where T : class
     {
         var tokenList = tokens.ToList();
@@ -95,20 +95,20 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
 
         foreach (var token in tokenList)
         {
+            if (SkipPagingAndSelect(token, ignorePaging)) continue;
+
             if (!SkipJoinKeyword(token))
             {
                 result.Builder += $"{EngineDefaults.Config.QueryJoinKeyword:raw}";
             }
 
-            if (SkipForCount(token, isCount)) continue;
-
             result = token.Accept<T>(tokenVisitor, result);
         }
     }
 
-    private static bool SkipForCount(Token token, bool isCount)
+    private static bool SkipPagingAndSelect(Token token, bool ignorePaging)
     {
-        return isCount && token is PagingToken or SelectToken;
+        return ignorePaging && token is PagingToken or SelectToken;
     }
 
     private static bool SkipJoinKeyword(Token token)
@@ -127,9 +127,9 @@ public class SqlQueryBuilder(ITokenizationService tokenizationService, ISqlToken
         return false;
     }
 
-    private static QueryBuilder BuildJsonWrapper(QueryBuilder innerQuery, string cte, bool isCount)
+    private static QueryBuilder BuildJsonWrapper(QueryBuilder innerQuery, string cte, bool ignorePaging)
     {
-        return innerQuery.DbConnection.QueryBuilder(isCount ?
+        return innerQuery.DbConnection.QueryBuilder(ignorePaging ?
             $"{cte:raw}{innerQuery:raw}" :
             (FormattableString)$"{cte:raw}SELECT COALESCE(json_agg(items), '[]') FROM ({innerQuery:raw}) items");
     }

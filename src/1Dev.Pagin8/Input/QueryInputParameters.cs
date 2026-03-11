@@ -2,7 +2,7 @@
 
 public class QueryInputParameters
 {
-    public static QueryInputParameters Create(string sql, string queryString, string defaultQueryString, bool ignoreLimit, bool isJson = false, bool isCount = false, bool isDefault = false, string ctePrefix = "")
+    public static QueryInputParameters Create(string sql, string queryString, string defaultQueryString, bool ignoreLimit, bool isJson = false, bool ignorePaging = false, bool isDefault = false, string ctePrefix = "")
     {
         return new QueryInputParameters
         {
@@ -11,7 +11,7 @@ public class QueryInputParameters
             DefaultQueryString = defaultQueryString,
             IgnoreLimit = ignoreLimit,
             IsJson = isJson,
-            IsCount = isCount,
+            IgnorePaging = ignorePaging,
             IsDefault = isDefault,
             CtePrefix = ctePrefix
         };
@@ -35,15 +35,15 @@ public class QueryInputParameters
 
     public bool IsJson { get; init; }
 
-    public bool IsCount { get; set; }
+    public bool IgnorePaging { get; set; }
 
     public bool IsDefault { get; set; }
 
     public string CtePrefix { get; init; }
 
-    public void SetCount()
+    public void SetIgnorePaging()
     {
-        IsCount = true;
+        IgnorePaging = true;
     }
 
     public void SetDefault(bool isDefault)
