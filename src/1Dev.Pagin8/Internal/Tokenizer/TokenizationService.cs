@@ -53,7 +53,7 @@ public class TokenizationService(
 
     public string Standardize(IEnumerable<Token> tokens)
     {
-        var orderedTokens = EnsureOrderByPriority(tokens).ToList();
+        var orderedTokens = EnsureOrderByPriority(tokens);
         return tokenizer.RevertToQueryString(orderedTokens);
     }
 

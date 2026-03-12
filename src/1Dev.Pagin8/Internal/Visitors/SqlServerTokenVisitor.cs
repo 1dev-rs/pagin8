@@ -1,4 +1,4 @@
-﻿using _1Dev.Pagin8.Extensions;
+using _1Dev.Pagin8.Extensions;
 using _1Dev.Pagin8.Internal.DateProcessor;
 using _1Dev.Pagin8.Internal.Exceptions.Base;
 using _1Dev.Pagin8.Internal.Exceptions.StatusCodes;
@@ -21,9 +21,9 @@ using System.Text;
 using QueryBuilder = InterpolatedSql.Dapper.SqlBuilders.QueryBuilder;
 
 namespace _1Dev.Pagin8.Internal.Visitors;
-public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor dateProcessor) : ISqlTokenVisitor
-{
 
+public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor dateProcessor) : ISqlTokenVisitor
+{
     #region Public methods
 
     public QueryBuilderResult Visit<T>(ComparisonToken token, QueryBuilderResult result) where T : class
@@ -36,7 +36,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var leftHandSide = GetLeftHandSideExpression(procType, comparison.Column, token.JsonPath, typeCode);
 
         var query = BuildQuery(leftHandSide, typeCode, token, isText, comparison);
-        TryHandleNullColumns(comparison.Column, token, ref query);
+        TryHandleNullColumns(leftHandSide, token, ref query);
         result.Builder += query;
 
         return result;
@@ -92,7 +92,6 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         return result;
     }
 
-
     public QueryBuilderResult Visit<T>(SortToken token, QueryBuilderResult result) where T : class
     {
         MapPlaceholderToKey<T>(token.SortExpressions);
@@ -123,6 +122,13 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     public QueryBuilderResult Visit<T>(PagingToken token, QueryBuilderResult result) where T : class
     {
         token.Sort?.Accept<T>(this, result);
+
+        // SQL Server requires ORDER BY before OFFSET...FETCH NEXT.
+        // When no sort is specified but a limit is, emit a no-op ORDER BY so the
+        // generated SQL stays valid.
+        if (token.Sort is null && token.Limit is not null)
+            result.Builder += $"ORDER BY (SELECT NULL)";
+
         token.Limit?.Accept<T>(this, result);
         token.Count?.Accept<T>(this, result);
 
@@ -157,7 +163,6 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             HandleRegularFilter(token, result, columnInfo);
         }
 
-        
         return result;
     }
 
@@ -168,7 +173,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var isSimple =
             elementType.IsPrimitive ||
             elementType == typeof(string) ||
-            !typeof(IEnumerable).IsAssignableFrom(typeof(T)); 
+            !typeof(IEnumerable).IsAssignableFrom(typeof(T));
 
         if (isSimple)
         {
@@ -198,7 +203,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         var query =
             (FormattableString)
-            $"{leftHandSide:raw} {token.GetSqlOperator():raw} {startDate:yyyy-MM-dd HH: mm: ss.fffffff} AND {endDate:yyyy-MM-dd HH: mm: ss.fffffff}";
+            $"{leftHandSide:raw} {token.GetSqlOperator():raw} {startDate:yyyy-MM-dd HH:mm:ss.fffffff} AND {endDate:yyyy-MM-dd HH:mm:ss.fffffff}";
 
         TryHandleNullColumns(leftHandSide, token, ref query);
         result.Builder += query;
@@ -239,7 +244,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
                 $"Limit value must be a positive integer, but was {token.Value}"
             );
 
-        result.Builder += $"LIMIT {token.Value}";
+        result.Builder += $"OFFSET 0 ROWS FETCH NEXT {token.Value} ROWS ONLY";
         return result;
     }
 
@@ -250,13 +255,36 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     private static FormattableString BuildQuery(string column, TypeCode typeCode, ComparisonToken token, bool isText, DbComparison comparison)
     {
         return typeCode == TypeCode.DateTime
-            ? $"DATE({column:raw}) {token.GetSqlOperator(isText):raw} DATE({comparison.Value})"
-            : (FormattableString)$"{column:raw} {token.GetSqlOperator(isText):raw} {comparison.Value} {TryEscapeSpecialChars(token.Operator):raw}";
+            ? $"CAST({column:raw} AS DATE) {GetSqlServerSqlOperator(token, isText):raw} CAST({comparison.Value} AS DATE)"
+            : (FormattableString)$"{column:raw} {GetSqlServerSqlOperator(token, isText):raw} {comparison.Value} {TryEscapeSpecialChars(token.Operator):raw}";
+    }
+
+    /// <summary>
+    /// Returns the correct SQL comparison operator for SQL Server, bypassing the global
+    /// <c>Pagin8Runtime.Config.DatabaseType</c> flag that the shared <see cref="SqlOperatorProcessor"/>
+    /// uses. When the app is configured for PostgreSQL (main DB) but also has an SQL Server
+    /// connection (archive DB), the shared helpers would return "ILIKE" — which is invalid on
+    /// SQL Server. This method always returns LIKE / NOT LIKE for text comparisons.
+    /// </summary>
+    private static string GetSqlServerSqlOperator(ComparisonToken token, bool isText)
+    {
+        return token.Operator switch
+        {
+            // LIKE-family operators: always use SQL Server syntax
+            ComparisonOperator.Like      => token.IsNegated ? "NOT LIKE" : "LIKE",
+            ComparisonOperator.Contains  => token.IsNegated ? "NOT LIKE" : "LIKE",
+            ComparisonOperator.StartsWith => token.IsNegated ? "NOT LIKE" : "LIKE",
+            ComparisonOperator.EndsWith  => token.IsNegated ? "NOT LIKE" : "LIKE",
+            // Equals on text: PostgreSQL uses ILIKE, SQL Server uses LIKE (collation-based CI)
+            ComparisonOperator.Equals when isText => token.IsNegated ? "NOT LIKE" : "LIKE",
+            // All other operators (=, >, <, >=, <=, IS, IN, BETWEEN) are the same across
+            // database engines — the shared helper is safe for these.
+            _ => token.GetSqlOperator(isText)
+        };
     }
 
     private void BuildSortConditions<T>(QueryBuilder builder, IReadOnlyList<SortExpression> sortExpressions) where T : class
     {
-        // Parameter reuse should be configured at QueryBuilder creation, not via global state
         if (sortExpressions.All(x => string.IsNullOrEmpty(x.LastValue))) return;
 
         builder += $"(";
@@ -303,7 +331,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
                         else
                         {
                             var coalesce = GetCoalesceMinValue(typeCode);
-                            builder += $" (({formattedName:raw} IS NULL AND {coalesce} {@operator:raw} {formattedValue}) OR ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {formattedValue}))";
+                            builder += $" ((ISNULL({formattedName:raw}, {coalesce}) {@operator:raw} {formattedValue} AND {formattedName:raw} IS NULL) OR ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {formattedValue}))";
                         }
                     }
                     else
@@ -338,8 +366,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             if (columnInfo.IsNullAllowed)
             {
                 var coalesce = GetCoalesceMinValue(typeCode);
-                var nullPosition = expression.SortOrder == SortOrder.Ascending ? "NULLS FIRST" : "NULLS LAST";
-                builder += $"COALESCE({formattedName:raw}, {coalesce}) {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw} {nullPosition:raw}";
+                builder += $"ISNULL({formattedName:raw}, {coalesce}) {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw}";
             }
             else
             {
@@ -354,8 +381,8 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     {
         return procType switch
         {
-            ProcessingType.JsonArray => $"(x.val ->> '{column}'){GetJsonFieldType(typeCode)}",
-            ProcessingType.Json => $"({jsonPath} ->> '{column}'){GetJsonFieldType(typeCode)}",
+            ProcessingType.JsonArray => $"JSON_VALUE(x.value, '$.{column}'){GetJsonFieldType(typeCode)}",
+            ProcessingType.Json => $"JSON_VALUE({jsonPath}, '$.{column}'){GetJsonFieldType(typeCode)}",
             _ => column
         };
     }
@@ -396,29 +423,34 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     private static void AppendValueQueryCondition(QueryBuilderResult result, IsToken token, string leftHandSide, string negation)
     {
         var value = bool.Parse(token.Value);
-        FormattableString query = $"{leftHandSide:raw} IS {negation:raw} {value:raw}";
+        // SQL Server does not support the "IS TRUE"/"IS FALSE" syntax — only "IS NULL"/"IS NOT NULL" work.
+        // Translate: IS TRUE → = 1, IS NOT TRUE → <> 1, IS FALSE → = 0, IS NOT FALSE → <> 0.
+        var (sqlOp, bitValue) = (token.IsNegated, value) switch
+        {
+            (false, true)  => ("=",  1),   // IS TRUE
+            (true,  true)  => ("<>", 1),   // IS NOT TRUE
+            (false, false) => ("=",  0),   // IS FALSE
+            (true,  false) => ("<>", 0),   // IS NOT FALSE
+        };
+        FormattableString query = $"{leftHandSide:raw} {sqlOp:raw} {bitValue}";
         result.Builder += query;
     }
 
     private void HandleJsonArrayFilter(NestedFilterToken token, QueryBuilderResult result, ColumnInfo columnInfo)
     {
-        if (token.Tokens.All(t => t is ArrayOperationToken))
-        {
-            result.Builder += $"(";
-            AppendChildTokens(token, result, columnInfo.Type);
-            result.Builder += $")";
-            return;
-        }
-
         result.Builder += $"EXISTS (";
         ValidateJsonFieldName(token.Field);
-        var formattedArrayQuery = FormattableStringFactory.Create(BaseJsonArrayQuery.ToString().Replace("/**field**/", token.Field));
-        var innerBuilder = new QueryBuilder(result.Builder.DbConnection, formattedArrayQuery);
+        
+        var innerBuilder = new QueryBuilder(result.Builder.DbConnection, 
+            FormattableStringFactory.Create($"SELECT 1 FROM OPENJSON({token.Field}) AS x WHERE 1=1"));
+        
         var innerResult = new QueryBuilderResult { Builder = innerBuilder };
+        
         if (token.Tokens.Any())
         {
             innerResult.Builder += $" {EngineDefaults.Config.QueryJoinKeyword:raw} ";
         }
+        
         AppendChildTokens(token, innerResult, columnInfo.Type);
 
         result.Builder += innerBuilder.Build();
@@ -438,24 +470,12 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         foreach (var child in token.Tokens)
         {
-            
             if (!first) result.Builder += $" {EngineDefaults.Config.QueryJoinKeyword:raw} ";
             first = false;
 
             DynamicVisit(child, result, innerType);
         }
     }
-
-    private static FormattableString BaseJsonArrayQuery => @$"
-            SELECT 1
-            FROM (
-                SELECT jsonb_array_elements(/**field**/) AS val
-                UNION ALL
-                SELECT NULL as val
-                WHERE jsonb_array_length(/**field**/) = 0
-            ) AS x
-            WHERE 1=1
-            /**filters**/ ";
 
     private static string TryEscapeSpecialChars(ComparisonOperator op)
     {
@@ -485,8 +505,10 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
                 return -1;
             case TypeCode.DateTime:
                 return DateTime.MinValue;
+            // SQL Server has no boolean literal; 0 (int) is the BIT-compatible fallback
+            // for ISNULL(boolCol, <coalesce>) so it's never formatted as "False" via ToString().
             case TypeCode.Boolean:
-                return false;
+                return 0;
             default:
                 throw new NotSupportedException($"Coalesce fallback value does not exist for type code: {typeCode}");
         }
@@ -494,89 +516,59 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     private static FormattableString GenerateInQuery(string column, bool isText, InToken token, DbComparison comparison)
     {
-        var @operator = token.GetSqlOperator(isText); 
-        // For the ANY operator optimization, get the base operator WITHOUT negation applied
-        // Negation is handled by wrapping with NOT(...) at the end
-        var comparisonOperator = SqlOperatorProcessor.GetSqlOperator(token.Comparison, isText, isNegated: false);
+        var @operator = token.GetSqlOperator(isText);
 
-        // For non-text types, use standard IN operator (already efficient)
+        // For non-text fields (numbers, dates, etc.), use standard IN operator
         if (!isText)
-            return $"{column:raw} {@operator:raw} ({comparison.Value:raw})";
-
-        // Handle special case operators that have custom format strings
-        if (token.Comparison is ComparisonOperator.Equals or ComparisonOperator.In && @operator.Contains("{0}"))
         {
-            string formatted;
-
             if (token.IsNegated)
-            {
-                formatted = @operator.Contains("{1}")
-                    ? string.Format(@operator, column, comparison.Value) 
-                    : string.Format(@operator, column);                    
-
-                return FormattableStringFactory.Create($"{formatted}");
-            }
-
-            formatted = string.Format(@operator, comparison.Value);
-            return FormattableStringFactory.Create($"{column} {formatted}");
+                return $"{column:raw} NOT IN ({comparison.Value:raw})";
+            
+            return $"{column:raw} IN ({comparison.Value:raw})";
         }
 
-        // Extract individual values from the pre-formatted comparison.Value
+        // For text fields, extract individual values and parameterize them
         var raw = (string)comparison.Value;
         var values = raw
             .Trim('(', ')')
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(v => v.Trim('\'', ' '))
+            .Select(v => v.Trim('\'', ' ').ToLower())  // Values already lowercased during formatting
             .ToList();
 
         if (values.Count == 0)
         {
-            return token.IsNegated ? (FormattableString)$"TRUE" : (FormattableString)$"FALSE";
+            return token.IsNegated 
+                ? (FormattableString)$"1=1" 
+                : (FormattableString)$"1=0";
         }
 
-        // OPTIMIZATION: Use PostgreSQL's ANY operator with array for better performance
-        // Instead of: (col ILIKE val1 OR col ILIKE val2 OR col ILIKE val3)
-        // Use: col ILIKE ANY(ARRAY[val1, val2, val3])
+        // OPTIMIZATION: Use SQL Server's IN clause with LOWER() for case-insensitive comparison
+        // This is more efficient than multiple OR conditions
+        // LOWER(column) IN (@p0, @p1, @p2)
         
-        // Determine the operator for ANY clause
-        var anyOperator = comparisonOperator.ToUpper() switch
-        {
-            "ILIKE" => "ILIKE",
-            "LIKE" => "LIKE", 
-            "=" => "=",
-            "<>" => "<>",
-            _ => comparisonOperator
-        };
-
-        // Build ARRAY[val1, val2, val3] with proper parameterization
-        FormattableString arrayElements;
         if (values.Count == 1)
         {
-            arrayElements = $"{values[0]}";
-        }
-        else
-        {
-            arrayElements = $"{values[0]}";
-            for (var i = 1; i < values.Count; i++)
-            {
-                arrayElements = $"{arrayElements}, {values[i]}";
-            }
+            var singleValue = values[0];
+            return token.IsNegated
+                ? (FormattableString)$"LOWER({column:raw}) <> {singleValue}"
+                : (FormattableString)$"LOWER({column:raw}) = {singleValue}";
         }
 
-        // Construct the final query using ANY
-        if (token.IsNegated)
+        // For multiple values, build: LOWER(column) IN (val1, val2, val3) or NOT IN
+        // Each value becomes a proper SQL parameter
+        FormattableString result = $"LOWER({column:raw}) {(token.IsNegated ? "NOT IN" : "IN"):raw} ({values[0]}";
+        
+        // Append remaining values
+        for (var i = 1; i < values.Count; i++)
         {
-            // For negation: NOT (column ILIKE ANY(ARRAY[...]))
-            // Or equivalently: column NOT ILIKE ALL(ARRAY[...])
-            return $"NOT ({column:raw} {anyOperator:raw} ANY(ARRAY[{arrayElements}]))";
+            result = $"{result}, {values[i]}";
         }
-        else
-        {
-            // Standard: column ILIKE ANY(ARRAY[...])
-            return $"{column:raw} {anyOperator:raw} ANY(ARRAY[{arrayElements}])";
-        }
+        
+        // Close the IN clause
+        result = $"{result})";
+        
+        return result;
     }
-
 
     private void MapPlaceholderToKey<T>(IReadOnlyCollection<SortExpression> sortExpressions) where T : class
     {
@@ -647,8 +639,6 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         return new DbComparison(formattedName, formattedValue);
     }
 
-
-
     private static string JoinInArray(string separator, TypeCode typeCode, params object[] values)
     {
         var stringBuilder = new StringBuilder();
@@ -681,17 +671,51 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     {
         return typeCode switch
         {
-            TypeCode.String => QueryBuilderHelper.MapComparisonToNpgsqlString(comparison, value, isTranslit, isSort),
-            TypeCode.DateTime => TryParseExactLocalDate(value, out var date)? date : throw new ArgumentException($"Invalid date format '{value}'. Expected yyyy-MM-dd or ISO-8601."),
+            TypeCode.String => MapComparisonToSqlServerString(comparison, value, isTranslit, isSort),
+            TypeCode.DateTime => TryParseExactLocalDate(value, out var date) ? date : throw new ArgumentException($"Invalid date format '{value}'. Expected yyyy-MM-dd or ISO-8601."),
             TypeCode.Int16 => short.TryParse(value, out var shortValue) ? shortValue : throw new ArgumentException($"Cannot format value {value} as Int16"),
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? intValue : throw new ArgumentException($"Cannot format value {value} as Int32"),
             TypeCode.Int64 => long.TryParse(value, out var longValue) ? longValue : throw new ArgumentException($"Cannot format value {value} as Int64"),
-            TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
-            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
+            TypeCode.Double => double.TryParse(value, out var doubleValue) ? doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
+            // SQL Server has no boolean literal — use BIT (1/0) so the value is never formatted
+            // as C# "True"/"False" by the dynamic/.ToString() path in InterpolatedSql.
+            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (boolValue ? 1 : 0) : throw new ArgumentException($"Cannot format value {value} as Boolean"),
             TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToLowerBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
             TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
             _ => throw new ArgumentException($"Cannot format values for TypeCode {typeCode}")
         };
+    }
+
+    private static string MapComparisonToSqlServerString(ComparisonOperator comparisonOperator, string value, bool isTranslit, bool isSort)
+    {
+        if (isSort) return value;
+
+        value = Transliteration.ToLowerBoldLatin(value);
+
+        var formatFunc = GetComparisonOperatorSqlServerFormatMap(comparisonOperator);
+
+        return formatFunc(value);
+    }
+
+    private static Func<string, string> GetComparisonOperatorSqlServerFormatMap(ComparisonOperator op)
+    {
+        return op switch
+        {
+            ComparisonOperator.StartsWith => value => $"{EscapeSpecialCharactersForSqlServer(value)}%",
+            ComparisonOperator.EndsWith => value => $"%{EscapeSpecialCharactersForSqlServer(value)}",
+            ComparisonOperator.Contains => value => $"%{EscapeSpecialCharactersForSqlServer(value)}%",
+            _ => value => value
+        };
+    }
+
+    private static string EscapeSpecialCharactersForSqlServer(string input)
+    {
+        return input
+            .Replace(QueryBuilderHelper.EscapeCharacter, QueryBuilderHelper.EscapeCharacter + QueryBuilderHelper.EscapeCharacter)
+            .Replace("_", QueryBuilderHelper.EscapeCharacter + "_")
+            .Replace("%", QueryBuilderHelper.EscapeCharacter + "%")
+            .Replace("[", QueryBuilderHelper.EscapeCharacter + "[")
+            .Replace("]", QueryBuilderHelper.EscapeCharacter + "]");
     }
 
     private static bool TryParseExactLocalDate(string value, out DateTime result)
@@ -704,8 +728,8 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
         var formats = new[]
         {
-            "yyyy-MM-dd",            
-            "yyyy-MM-ddTHH:mm:ss",   
+            "yyyy-MM-dd",
+            "yyyy-MM-ddTHH:mm:ss",
             "yyyy-MM-ddTHH:mm:ss.fff"
         };
 
@@ -713,12 +737,11 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             value,
             formats,
             CultureInfo.InvariantCulture,
-            DateTimeStyles.None,          
+            DateTimeStyles.None,
             out result);
     }
 
-
-private dynamic? FormatColumnValue<T>(string field, string? value) where T : class
+    private dynamic? FormatColumnValue<T>(string field, string? value) where T : class
     {
         var typeCode = GetTypeCodeForProperty<T>(field);
 
@@ -737,7 +760,7 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? (int?)intValue : throw new ArgumentException($"Cannot format value {value} as Int32"),
             TypeCode.Int64 => long.TryParse(value, out var longValue) ? (long?)longValue : throw new ArgumentException($"Cannot format value {value} as Int64"),
             TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? (double?)doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
-            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (bool?)boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
+            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (int?)(boolValue ? 1 : 0) : throw new ArgumentException($"Cannot format value {value} as Boolean"),
             TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
             TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? (decimal?)decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
             _ => throw new ArgumentException($"Cannot format values for TypeCode {typeCode}")
@@ -778,19 +801,32 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
     {
         var reservedWords = new HashSet<string>
         {
-            "ALL", "ANALYSE", "ANALYZE", "AND", "ANY", "ARRAY", "AS", "ASC", "ASYMMETRIC", "BOTH",
-            "CASE", "CAST", "CHECK", "COLLATE", "COLUMN", "CONSTRAINT", "CREATE", "CURRENT_CATALOG",
-            "CURRENT_DATE", "CURRENT_ROLE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "CURRENT_USER",
-            "DEFAULT", "DEFERRABLE", "DESC", "DISTINCT", "DO", "ELSE", "END", "EXCEPT", "FALSE",
-            "FETCH", "FOR", "FOREIGN", "FROM", "GRANT", "GROUP", "HAVING", "IN", "INITIALLY",
-            "INTERSECT", "INTO", "LEADING", "LIMIT", "LOCALTIME", "LOCALTIMESTAMP", "NEW", "NOT",
-            "NULL", "OFFSET", "OLD", "ON", "ONLY", "OR", "ORDER", "PLACING", "PRIMARY", "REFERENCES",
-            "RETURNING", "SELECT", "SESSION_USER", "SOME", "SYMMETRIC", "TABLE", "THEN", "TO",
-            "TRAILING", "TRUE", "UNION", "UNIQUE", "USER", "USING", "VARIADIC", "WHEN", "WHERE",
-            "WINDOW", "WITH"
+            "ADD", "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "AUTHORIZATION", "BACKUP", "BEGIN",
+            "BETWEEN", "BREAK", "BROWSE", "BULK", "BY", "CASCADE", "CASE", "CHECK", "CHECKPOINT",
+            "CLOSE", "CLUSTERED", "COALESCE", "COLLATE", "COLUMN", "COMMIT", "COMPUTE", "CONSTRAINT",
+            "CONTAINS", "CONTAINSTABLE", "CONTINUE", "CONVERT", "CREATE", "CROSS", "CURRENT",
+            "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "CURRENT_USER", "CURSOR", "DATABASE",
+            "DBCC", "DEALLOCATE", "DECLARE", "DEFAULT", "DELETE", "DENY", "DESC", "DISK", "DISTINCT",
+            "DISTRIBUTED", "DOUBLE", "DROP", "DUMP", "ELSE", "END", "ERRLVL", "ESCAPE", "EXCEPT",
+            "EXEC", "EXECUTE", "EXISTS", "EXIT", "EXTERNAL", "FETCH", "FILE", "FILLFACTOR", "FOR",
+            "FOREIGN", "FREETEXT", "FREETEXTTABLE", "FROM", "FULL", "FUNCTION", "GOTO", "GRANT",
+            "GROUP", "HAVING", "HOLDLOCK", "IDENTITY", "IDENTITYCOL", "IDENTITY_INSERT", "IF", "IN",
+            "INDEX", "INNER", "INSERT", "INTERSECT", "INTO", "IS", "JOIN", "KEY", "KILL", "LEFT",
+            "LIKE", "LINENO", "LOAD", "MERGE", "NATIONAL", "NOCHECK", "NONCLUSTERED", "NOT", "NULL",
+            "NULLIF", "OF", "OFF", "OFFSETS", "ON", "OPEN", "OPENDATASOURCE", "OPENQUERY",
+            "OPENROWSET", "OPENXML", "OPTION", "OR", "ORDER", "OUTER", "OVER", "PERCENT", "PIVOT",
+            "PLAN", "PRECISION", "PRIMARY", "PRINT", "PROC", "PROCEDURE", "PUBLIC", "RAISERROR",
+            "READ", "READTEXT", "RECONFIGURE", "REFERENCES", "REPLICATION", "RESTORE", "RESTRICT",
+            "RETURN", "REVERT", "REVOKE", "RIGHT", "ROLLBACK", "ROWCOUNT", "ROWGUIDCOL", "RULE",
+            "SAVE", "SCHEMA", "SECURITYAUDIT", "SELECT", "SEMANTICKEYPHRASETABLE",
+            "SEMANTICSIMILARITYDETAILSTABLE", "SEMANTICSIMILARITYTABLE", "SESSION_USER", "SET",
+            "SETUSER", "SHUTDOWN", "SOME", "STATISTICS", "TABLE", "TABLESAMPLE", "TEXTSIZE", "THEN",
+            "TO", "TOP", "TRAN", "TRANSACTION", "TRIGGER", "TRUNCATE", "TRY_CONVERT", "TSEQUAL",
+            "UNION", "UNIQUE", "UNPIVOT", "UPDATE", "UPDATETEXT", "USE", "USER", "VALUES", "VARYING",
+            "VIEW", "WAITFOR", "WHEN", "WHERE", "WHILE", "WITH", "WITHIN", "WRITETEXT"
         };
 
-        return reservedWords.Contains(columnName.ToUpper()) ? $"\"{columnName.PascalToCamelCase()}\"" : columnName.PascalToCamelCase();
+        return reservedWords.Contains(columnName.ToUpper()) ? $"[{columnName.PascalToCamelCase()}]" : columnName.PascalToCamelCase();
     }
 
     private static Type GetArrayElementTypeOrThrow<T>(string fieldName, out Type propertyType)
@@ -798,7 +834,7 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
         var type = typeof(T);
         Type? elementType;
 
-        if (type == typeof(string)) // Special case
+        if (type == typeof(string))
         {
             throw new Pagin8Exception(Pagin8StatusCode.Pagin8_PropertyTypeUnknown.Code);
         }
@@ -841,7 +877,6 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
     private static void ProcessSimpleTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type valueType)
     {
         var elementType = GetElementTypeOrSelf(valueType);
-        var arrayTypeSpecifier = GetPostgresArrayType(elementType);
         var valuesFormatted = FormatArrayValues(token.Values, elementType);
 
         if (!valuesFormatted.Any())
@@ -852,14 +887,14 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
         var filterSql = token.Operator switch
         {
             ArrayOperator.Include when isDatabaseFieldArray =>
-                $"{token.Field}{arrayTypeSpecifier} @> ARRAY[{valuesFormatted}]{arrayTypeSpecifier}",
+                $"(SELECT COUNT(*) FROM (VALUES {valuesFormatted}) AS v(val) WHERE EXISTS(SELECT 1 FROM STRING_SPLIT(CAST({token.Field} AS NVARCHAR(MAX)), ',') WHERE value = CAST(v.val AS NVARCHAR))) = (SELECT COUNT(*) FROM (VALUES {valuesFormatted}) AS v(val))",
             ArrayOperator.Exclude when isDatabaseFieldArray =>
-                $"NOT ({token.Field}{arrayTypeSpecifier} && ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+                $"NOT EXISTS(SELECT 1 FROM (VALUES {valuesFormatted}) AS v(val) WHERE EXISTS(SELECT 1 FROM STRING_SPLIT(CAST({token.Field} AS NVARCHAR(MAX)), ',') WHERE value = CAST(v.val AS NVARCHAR)))",
 
             ArrayOperator.Include =>
-                $"{token.Field} = ANY(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+                $"{token.Field} IN ({valuesFormatted})",
             ArrayOperator.Exclude =>
-                $"{token.Field} != ALL(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+                $"{token.Field} NOT IN ({valuesFormatted})",
 
             _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
         };
@@ -885,93 +920,45 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
 
     private static string FormatArrayValues(IEnumerable<object> values, Type type)
     {
-        var array = type == typeof(string) ? values.Select(v => $"'{Transliteration.CyrlToLatin(v.ToString())}'").ToList() : values.Select(v => v.ToString());
+        var array = type == typeof(string) 
+            ? values.Select(v => $"('{Transliteration.CyrlToLatin(v.ToString())}')").ToList() 
+            : values.Select(v => $"({v})");
+        
         return string.Join(", ", array);
     }
 
     private static void ProcessComplexTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type arrayType)
     {
-        if (!token.Values.Any())
+        var valuesFormatted = FormatArrayValues(token.Values, arrayType);
+
+        if (!valuesFormatted.Any())
             return;
 
-        var col = token.JsonPath;
-
-        switch (token.Operator)
+        var filterSql = token.Operator switch
         {
-            case ArrayOperator.Include:
-            {
-                var jsonLiteral = BuildJsonbArrayLiteral(token.Values, token.Field, arrayType);
-                if (token.IsNegated)
-                    result.Builder += $"(NOT ({col:raw} @> {jsonLiteral}::jsonb) OR {col:raw} IS NULL)";
-                else
-                    result.Builder += $"{col:raw} @> {jsonLiteral}::jsonb";
-                break;
-            }
-            case ArrayOperator.Exclude:
-            {
-                if (token.IsNegated)
-                    result.Builder += $"NOT (";
+            ArrayOperator.Include => 
+                $"(SELECT COUNT(*) FROM (VALUES {valuesFormatted}) AS v(val) WHERE EXISTS(SELECT 1 FROM OPENJSON({token.JsonPath}) AS x WHERE JSON_VALUE(x.value, '$.{token.Field}') = CAST(v.val AS NVARCHAR))) = (SELECT COUNT(*) FROM (VALUES {valuesFormatted}) AS v(val))",
+            ArrayOperator.Exclude => 
+                $"(NOT EXISTS(SELECT 1 FROM (VALUES {valuesFormatted}) AS v(val) WHERE EXISTS(SELECT 1 FROM OPENJSON({token.JsonPath}) AS x WHERE JSON_VALUE(x.value, '$.{token.Field}') = CAST(v.val AS NVARCHAR))) OR (SELECT COUNT(*) FROM OPENJSON({token.JsonPath})) = 0)",
+            _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
+        };
 
-                result.Builder += $"(";
-                var first = true;
-                foreach (var v in token.Values)
-                {
-                    if (!first) result.Builder += $" AND ";
-                    first = false;
-                    var singleLiteral = BuildJsonbArrayLiteral([v], token.Field, arrayType);
-                    result.Builder += $"NOT ({col:raw} @> {singleLiteral}::jsonb)";
-                }
-                result.Builder += $" OR {col:raw} IS NULL)";
-
-                if (token.IsNegated)
-                    result.Builder += $")";
-                break;
-            }
-            default:
-                throw new NotSupportedException($"Unsupported array operator: {token.Operator}");
+        if (token.IsNegated)
+        {
+            result.Builder += $"NOT ({filterSql:raw})";
         }
-    }
-
-    private static string BuildJsonbArrayLiteral(IEnumerable<object> values, string field, Type arrayType)
-    {
-        var elements = values.Select(v =>
+        else
         {
-            var jsonbValue = FormatJsonbScalar(v, arrayType);
-            return "{\"" + field + "\": " + jsonbValue + "}";
-        });
-        return "[" + string.Join(", ", elements) + "]";
-    }
-
-    private static string FormatJsonbScalar(object value, Type type)
-    {
-        if (type == typeof(string))
-            return "\"" + Transliteration.CyrlToLatin(value.ToString()!) + "\"";
-        if (type == typeof(bool))
-            return value.ToString()!.ToLowerInvariant();
-        return value.ToString()!;
+            result.Builder += $"{filterSql:raw}";
+        }
     }
 
     private static string GetJsonFieldType(TypeCode typeCode)
     {
         return typeCode switch
         {
-            TypeCode.Boolean => "::boolean",
-            TypeCode.Byte or TypeCode.SByte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64 or TypeCode.Int16
-                or TypeCode.Int32 or TypeCode.Int64 or TypeCode.Double or TypeCode.Single => "::int",
-            TypeCode.Decimal => "::numeric",
-            _ => "::text"
+            _ => ""
         };
-    }
-
-    private static string GetPostgresArrayType(Type type)
-    {
-        if (type == typeof(int))
-            return "::int[]";
-        if (type == typeof(string))
-            return "::text[]";
-        if (type == typeof(decimal))
-            return "::numeric[]";
-        throw new ArgumentException("Unsupported array type.");
     }
 
     private static readonly ConcurrentDictionary<(Type TokenType, Type EntityType), MethodInfo> _methodCache = new();
@@ -1017,12 +1004,6 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
 
         return (isJsonArray ? ProcessingType.JsonArray : isJson ? ProcessingType.Json : ProcessingType.Regular, innerType);
     }
-    #endregion
-}
 
-public enum ProcessingType
-{
-    Regular,
-    Json,
-    JsonArray
+    #endregion
 }

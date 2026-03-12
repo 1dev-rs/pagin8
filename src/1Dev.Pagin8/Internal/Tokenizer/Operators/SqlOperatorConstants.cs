@@ -1,4 +1,6 @@
-﻿using _1Dev.Pagin8.Internal.Tokenizer.Tokens.Sort;
+﻿using _1Dev.Pagin8.Internal.Configuration;
+using _1Dev.Pagin8.Internal.Tokenizer.Tokens.Sort;
+using Internal.Configuration;
 
 // ReSharper disable InconsistentNaming
 
@@ -21,7 +23,9 @@ public static class SqlOperatorConstants
 
     public static readonly Dictionary<ComparisonOperator, string> ReverseQueryComparisonMap = QueryComparisonMap.ToDictionary(kv => kv.Value, kv => kv.Key);
 
-    public static readonly Dictionary<ComparisonOperator, string> ComparisonSqlMap = new()
+    private static bool IsSqlServer => Pagin8Runtime.Config.DatabaseType == DatabaseType.SqlServer;
+
+    private static readonly Dictionary<ComparisonOperator, string> _comparisonSqlMapPostgre = new()
     {
         { ComparisonOperator.Equals, "=" },
         { ComparisonOperator.GreaterThan, ">" },
@@ -37,11 +41,43 @@ public static class SqlOperatorConstants
         { ComparisonOperator.Between, "BETWEEN" }
     };
 
-    public static readonly Dictionary<ComparisonOperator, string> CaseSensitiveComparisonSqlMap = new()
+    private static readonly Dictionary<ComparisonOperator, string> _comparisonSqlMapSqlServer = new()
+    {
+        { ComparisonOperator.Equals, "=" },
+        { ComparisonOperator.GreaterThan, ">" },
+        { ComparisonOperator.GreaterThanOrEqual, ">=" },
+        { ComparisonOperator.LessThan, "<" },
+        { ComparisonOperator.LessThanOrEqual, "<=" },
+        { ComparisonOperator.Like, "LIKE" },
+        { ComparisonOperator.Is, "IS" },
+        { ComparisonOperator.StartsWith, "LIKE" },
+        { ComparisonOperator.EndsWith, "LIKE" },
+        { ComparisonOperator.Contains, "LIKE" },
+        { ComparisonOperator.In, "IN" },
+        { ComparisonOperator.Between, "BETWEEN" }
+    };
+
+    public static Dictionary<ComparisonOperator, string> ComparisonSqlMap =>
+        IsSqlServer ? _comparisonSqlMapSqlServer : _comparisonSqlMapPostgre;
+
+    private static readonly Dictionary<ComparisonOperator, string> _caseSensitiveComparisonSqlMapPostgre = new()
     {
         { ComparisonOperator.Equals, "ILIKE" },
-        { ComparisonOperator.In, "ILIKE ANY (ARRAY[{0}])" }
+        // Note: For IN operator with text values, SQL Server uses standard IN syntax
+        // The actual value formatting is handled in the visitor (SqlServerTokenVisitor or NpgsqlTokenVisitor)
+        { ComparisonOperator.In, "IN" }
     };
+
+    private static readonly Dictionary<ComparisonOperator, string> _caseSensitiveComparisonSqlMapSqlServer = new()
+    {
+        { ComparisonOperator.Equals, "LIKE" },
+        // Note: For IN operator with text values, SQL Server uses standard IN syntax
+        // The actual value formatting is handled in the visitor (SqlServerTokenVisitor or NpgsqlTokenVisitor)
+        { ComparisonOperator.In, "IN" }
+    };
+
+    public static Dictionary<ComparisonOperator, string> CaseSensitiveComparisonSqlMap =>
+        IsSqlServer ? _caseSensitiveComparisonSqlMapSqlServer : _caseSensitiveComparisonSqlMapPostgre;
 
     public static readonly Dictionary<string, NestingOperator> QueryNestingMap = new()
     {
@@ -92,7 +128,7 @@ public static class SqlOperatorConstants
         { 'y', 365 },
     };
 
-    public static readonly Dictionary<ComparisonOperator, string> NegatedOperatorSqlMap = new()
+    private static readonly Dictionary<ComparisonOperator, string> _negatedOperatorSqlMapPostgre = new()
     {
         { ComparisonOperator.Equals, "!=" },
         { ComparisonOperator.Like, "NOT ILIKE" },
@@ -104,11 +140,39 @@ public static class SqlOperatorConstants
         { ComparisonOperator.Between, "NOT BETWEEN" },
     };
 
-    public static readonly Dictionary<ComparisonOperator, string> NegatedCaseSensitiveOperatorSqlMap = new()
+    private static readonly Dictionary<ComparisonOperator, string> _negatedOperatorSqlMapSqlServer = new()
+    {
+        { ComparisonOperator.Equals, "!=" },
+        { ComparisonOperator.Like, "NOT LIKE" },
+        { ComparisonOperator.StartsWith, "NOT LIKE" },
+        { ComparisonOperator.EndsWith, "NOT LIKE" },
+        { ComparisonOperator.Contains, "NOT LIKE" },
+        { ComparisonOperator.Is, "IS NOT" },
+        { ComparisonOperator.In, "NOT IN" },
+        { ComparisonOperator.Between, "NOT BETWEEN" },
+    };
+
+    public static Dictionary<ComparisonOperator, string> NegatedOperatorSqlMap =>
+        IsSqlServer ? _negatedOperatorSqlMapSqlServer : _negatedOperatorSqlMapPostgre;
+
+    private static readonly Dictionary<ComparisonOperator, string> _negatedCaseSensitiveSqlMapPostgre = new()
     {
         { ComparisonOperator.Equals, "NOT ILIKE" },
-        { ComparisonOperator.In, "NOT ({0} ILIKE ANY (ARRAY[{1}]))" }
+        // Note: For NOT IN operator with text values, SQL Server uses standard NOT IN syntax
+        // The actual value formatting is handled in the visitor (SqlServerTokenVisitor or NpgsqlTokenVisitor)
+        { ComparisonOperator.In, "NOT IN" }
     };
+
+    private static readonly Dictionary<ComparisonOperator, string> _negatedCaseSensitiveSqlMapSqlServer = new()
+    {
+        { ComparisonOperator.Equals, "NOT LIKE" },
+        // Note: For NOT IN operator with text values, SQL Server uses standard NOT IN syntax
+        // The actual value formatting is handled in the visitor (SqlServerTokenVisitor or NpgsqlTokenVisitor)
+        { ComparisonOperator.In, "NOT IN" }
+    };
+
+    public static Dictionary<ComparisonOperator, string> NegatedCaseSensitiveOperatorSqlMap =>
+        IsSqlServer ? _negatedCaseSensitiveSqlMapSqlServer : _negatedCaseSensitiveSqlMapPostgre;
 
     public static readonly Dictionary<string, ArrayOperator> ArrayOperatorMap = new()
     {

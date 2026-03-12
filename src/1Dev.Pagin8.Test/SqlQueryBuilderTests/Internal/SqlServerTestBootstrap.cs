@@ -1,9 +1,9 @@
-﻿using _1Dev.Pagin8.Internal.Configuration;
+using _1Dev.Pagin8.Internal.Configuration;
 using Internal.Configuration;
 
 namespace _1Dev.Pagin8.Test.SqlQueryBuilderTests.Internal;
 
-public static class Pagin8TestBootstrap
+public static class SqlServerTestBootstrap
 {
     public static void Init()
     {
@@ -15,7 +15,8 @@ public static class Pagin8TestBootstrap
                 DefaultPerPage = 50,
                 MaxItemsPerPage = 5000,
                 MaxSafeItemCount = 1_000_000
-            }
+            },
+            DatabaseType = DatabaseType.SqlServer
         });
     }
 }

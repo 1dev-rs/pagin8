@@ -40,6 +40,20 @@ public class InTokenizationStrategy : ITokenizationStrategy
 
         TokenValidator.ValidateComparison(@operator);
 
+        var splitValues = value.Trim('(', ')').Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+        if (splitValues.Length == 0)
+            throw new Pagin8Exception(
+                Pagin8StatusCode.Pagin8_InvalidIn.Code,
+                "IN operator requires at least one value"
+            );
+
+        if (splitValues.Any(string.IsNullOrWhiteSpace))
+            throw new Pagin8Exception(
+                Pagin8StatusCode.Pagin8_InvalidIn.Code,
+                "IN operator values cannot be empty"
+            );
+
         var inToken = !string.IsNullOrEmpty(comparison) ?
             new InToken(field, value, nestingLevel, comparison.GetComparisonOperator(), isNegated, comment) :
             new InToken(field, value, nestingLevel, isNegated: isNegated, comment: comment);
@@ -50,7 +64,10 @@ public class InTokenizationStrategy : ITokenizationStrategy
 
     public List<Token> Tokenize(string query, string jsonPath, int nestingLevel = 1)
     {
-        throw new NotImplementedException();
+        var tokens = Tokenize(query, nestingLevel);
+        foreach (var token in tokens)
+            token.JsonPath = jsonPath;
+        return tokens;
     }
 
 

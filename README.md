@@ -1,4 +1,4 @@
-# Pagin8
+﻿# Pagin8
 
 **PostgREST-inspired filtering & pagination for .NET + PostgreSQL**
 
@@ -11,13 +11,15 @@ Pagin8 is a C# library that provides a simple and powerful way to build SQL quer
 - 🔍 **Rich operators** - 30+ operators for comparison, strings, arrays, dates
 - 📊 **Smart pagination** - Cursor-based with sorting and count
 - 🎨 **Column selection** - Return only fields you need
-- ⚡ **High performance** - Built on Dapper + PostgreSQL
+- ⚡ **High performance** - Built on Dapper + PostgreSQL / SQL Server
+- 🗄️ **Multi-database** - PostgreSQL and SQL Server supported
 - 🏗️ **Clean code** - Repository pattern included
 
 ## 🎯 Quick Links
 
 - [Installation](#-installation) - Get started in 2 minutes
 - [Quick Start](#-quick-start---backend-integration) - Working API in 5 steps
+- [SQL Server Support](#-sql-server-support) - SQL Server setup
 - [Query Examples](#querying-syntax) - Real-world filtering
 - [All Operators](#supported-operators) - Complete reference
 - [Pagination](#paging-operator-for-pagination) - Cursor-based paging
@@ -88,6 +90,8 @@ Pagin8 support a wide range of operators for comparing values and constructing c
 -   `stw`: Starts With
 -   `enw`: Ends With
 -   `not.`: Logical NOT prefix for all operators ( `not.like` | `not.cs`... )
+
+> **Note:** On PostgreSQL, string operators use `ILIKE` (case-insensitive). On SQL Server, they use `LIKE` — case-sensitivity depends on the database collation.
 
 ### Logical Operators
 
@@ -205,8 +209,13 @@ When `with` is used, it unwraps the complex type (`userTags`) and applies the sp
 
 ### Supported Operators
 
-Currently, only two operators are supported for nested filtering:
+All standard Pagin8 operators are supported inside nested filtering conditions:
 
+-   `eq`, `gt`, `lt`, `gte`, `lte`: Comparison operators
+-   `like`, `cs`, `stw`, `enw`: String operators (with `not.` prefix)
+-   `in`, `not.in`: Array membership
+-   `is`, `not.is`: Boolean / null / empty checks
+-   `ago`, `for`: Date range operators
 -   `incl`: Includes values that match all of the provided values.
 -   `excl`: Excludes values that match any of the provided values.
 
@@ -223,10 +232,6 @@ This filters `userTags` to include values where `name` is both `test1` and `test
 Note that if you want to filter out some special character, like `#`, it must be decoded and sent like `%23`:
 
 `userTags.with=(colorCode.incl(%23FF0000))`
-
-### Future Enhancements
-
-Currently, only the `incl` and `excl` operators are supported for nested filtering. However,  expanding the capabilities of the filtering system to include support for all other operators is in progress.
 
 ## Date Range Operator
 
@@ -310,6 +315,15 @@ To initialize the every next page by same criteria, besides columns with directi
 -   `count.false`:  Excluding the total count of matching records from the response.
 
 There are a few more placeholders that you can use while setting the last value, those are `$empty` for empty strings, and `$null` for `null` values.
+
+## Paging — Limit Validation
+
+The `limit` value must be a positive integer. Providing `limit.0` or a negative value will result in a `Pagin8Exception` being thrown.
+
+```
+GET /<endpoint>?paging=(sort(id.asc),limit.0,count.false)  → ❌ Pagin8Exception: Limit value must be a positive integer
+GET /<endpoint>?paging=(sort(id.asc),limit.10,count.false) → ✅ OK
+```
 
 ## Retrieve Count Only with `paging(count.true)`
 
@@ -496,7 +510,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add Pagin8 core
 builder.Services.AddPagin8(config =>
 {
-    config.DatabaseType = DatabaseType.PostgreSql;
+    config.DatabaseType = DatabaseType.PostgreSql; // or DatabaseType.SqlServer
 });
 
 // Add Backend Extensions (ONE line setup!)
@@ -724,6 +738,100 @@ public class ProductRepository : FilteredRepositoryBase<ProductDto>
     protected override string ViewName => "vw_products";
 }
 ```
+
+---
+
+## 🗄️ SQL Server Support
+
+Pagin8 supports SQL Server in addition to PostgreSQL. The same filtering syntax works across both databases — the library automatically uses `LIKE` instead of `ILIKE` for string operators when targeting SQL Server.
+
+### Installation
+
+```bash
+# Core library (query building, filtering syntax)
+dotnet add package 1Dev.Pagin8
+
+# Backend extensions (ASP.NET Core + Dapper + SQL Server)
+dotnet add package 1Dev.Pagin8.Extensions.Backend
+```
+
+### Setup (Program.cs)
+
+```csharp
+using _1Dev.Pagin8.Extensions.Backend.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Configure Pagin8 for SQL Server
+builder.Services.AddPagin8(config =>
+{
+    config.DatabaseType = DatabaseType.SqlServer;
+});
+
+// Register SQL Server backend (uses SqlServerFilterProvider)
+builder.Services.AddPagin8BackendSqlServer(
+    builder.Configuration.GetConnectionString("DefaultConnection")!
+);
+
+var app = builder.Build();
+app.Run();
+```
+
+### Repository
+
+Use `ISqlServerFilterProvider` instead of `IFilterProvider`:
+
+```csharp
+using _1Dev.Pagin8.Extensions.Backend.Base;
+using _1Dev.Pagin8.Extensions.Backend.Interfaces;
+
+public class ProductRepository : FilteredRepositoryBase<ProductDto>
+{
+    protected override string ViewName => "dbo.vw_products";
+    protected override string? DefaultFilter => "isDeleted=eq.false";
+
+    public ProductRepository(ISqlServerFilterProvider filterProvider)
+        : base(filterProvider) { }
+}
+```
+
+### Running Both Databases Side-by-Side
+
+You can register named SQL Server providers when your application connects to multiple SQL Server instances:
+
+```csharp
+// Default SQL Server provider
+builder.Services.AddPagin8BackendSqlServer(
+    builder.Configuration.GetConnectionString("SqlServer")!
+);
+
+// Named SQL Server provider
+builder.Services.AddPagin8BackendSqlServer(
+    name: "reporting",
+    connectionString: builder.Configuration.GetConnectionString("SqlServerReporting")!
+);
+```
+
+Resolve a named provider in your repository:
+
+```csharp
+public class ReportRepository : FilteredRepositoryBase<ReportDto>
+{
+    protected override string ViewName => "dbo.vw_reports";
+
+    public ReportRepository(ISqlServerFilterProviderFactory factory)
+        : base(factory.Create("reporting")) { }
+}
+```
+
+### Differences from PostgreSQL
+
+| Behavior | PostgreSQL | SQL Server |
+|---|---|---|
+| String matching | `ILIKE` (case-insensitive) | `LIKE` (case-sensitivity depends on collation) |
+| Connection factory | `IDbConnectionFactory` / `NpgsqlConnectionFactory` | `ISqlServerDbConnectionFactory` / `SqlServerConnectionFactory` |
+| Filter provider | `IFilterProvider` | `ISqlServerFilterProvider` |
+| DI method | `AddPagin8Backend()` | `AddPagin8BackendSqlServer()` |
 
 ---
 

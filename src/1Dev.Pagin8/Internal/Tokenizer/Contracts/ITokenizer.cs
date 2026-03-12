@@ -7,5 +7,5 @@ public interface ITokenizer
 
     List<Token> Tokenize(string query, string jsonPath, int nestingLevel = 1);
 
-    string RevertToQueryString(List<Token> tokens);
+    string RevertToQueryString(IEnumerable<Token> tokens);
 }
