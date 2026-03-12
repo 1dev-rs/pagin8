@@ -52,7 +52,7 @@ public class FilterProvider : IFilterProvider
             queryString: query.QueryString,
             defaultQueryString: query.DefaultQuery,
             ignoreLimit: query.IgnoreLimit,
-            isJson: false,
+            isJson: query.IsJson,
             ignorePaging: false
         );
 
@@ -191,7 +191,7 @@ public class FilterProvider : IFilterProvider
             defaultQueryString: query.DefaultQuery,
             ignoreLimit: true,
             isJson: false,
-            ignorePaging: false
+            ignorePaging: true
         );
 
         var qbParams = QueryBuilderParameters.Create(
