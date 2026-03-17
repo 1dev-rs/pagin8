@@ -74,33 +74,46 @@ public class FilterProvider : IFilterProvider
             };
         }
 
-        IEnumerable<TResponse> data;
+        // Kick off both queries without awaiting — they run concurrently.
+        // The count uses its own pooled connection so neither blocks the other.
+        var dataTask = FetchDataAsync<TResponse>(buildResult.Builder, query, timeout);
+        var countTask = buildResult.Meta.ShowCount
+            ? CountOnSeparateConnectionAsync<TResponse>(viewName, query, timeout)
+            : Task.FromResult(0);
 
-        if (query.IsJson)
-        {
-            // isJson=true: the SQL is wrapped in SELECT COALESCE(json_agg(items), '[]') FROM (...) items
-            // This returns ONE row with ONE column — a raw JSON array string.
-            // QueryAsync<string>() reads it, then we deserialize into the typed collection.
-            var json = await buildResult.Builder.QueryFirstOrDefaultAsync<string>(commandTimeout: timeout);
-            data = string.IsNullOrEmpty(json) || json == "[]"
-                ? []
-                : JsonSerializer.Deserialize<IEnumerable<TResponse>>(json, JsonOptions) ?? [];
-        }
-        else
-        {
-            data = await buildResult.Builder.QueryAsync<TResponse>(commandTimeout: timeout);
-        }
-
-        var count = buildResult.Meta.ShowCount
-            ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout)
-            : 0;
+        await Task.WhenAll(dataTask, countTask);
 
         return new PagedResults<TResponse>
         {
-            Data = data,
-            TotalRows = count,
+            Data = dataTask.Result,
+            TotalRows = countTask.Result,
             Meta = buildResult.Meta
         };
+    }
+
+    private async Task<IEnumerable<TResponse>> FetchDataAsync<TResponse>(
+        InterpolatedSql.Dapper.SqlBuilders.QueryBuilder builder,
+        FilteredDataQuery query,
+        int? timeout) where TResponse : class
+    {
+        if (query.IsJson)
+        {
+            var json = await builder.QueryFirstOrDefaultAsync<string>(commandTimeout: timeout);
+            return string.IsNullOrEmpty(json) || json == "[]"
+                ? []
+                : JsonSerializer.Deserialize<IEnumerable<TResponse>>(json, JsonOptions) ?? [];
+        }
+
+        return await builder.QueryAsync<TResponse>(commandTimeout: timeout);
+    }
+
+    private async Task<int> CountOnSeparateConnectionAsync<TResponse>(
+        string viewName,
+        FilteredDataQuery query,
+        int? timeout) where TResponse : class
+    {
+        using var countConnection = _connectionFactory.Create();
+        return await GetCountInternalAsync<TResponse>(countConnection, viewName, query, timeout);
     }
 
     /// <summary>

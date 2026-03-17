@@ -15,6 +15,23 @@ public static class TokenHelper
         { 2, ',' }
     };
 
+    // Compiled once on first use (after EngineDefaults.Config is initialized).
+    // RegexOptions.Compiled generates IL at runtime and is ~3-5× faster than interpreted mode.
+    private static readonly Lazy<Regex> CompiledDateRange = new(static () => new Regex(DateRangePattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledNestedDateRange = new(static () => new Regex(NestedDateRangePattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledComparison = new(static () => new Regex(ComparisonPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledNestedComparison = new(static () => new Regex(NestedComparisonPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledIs = new(static () => new Regex(IsPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledNestedIs = new(static () => new Regex(NestedIsPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledIn = new(static () => new Regex(InPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledNestedIn = new(static () => new Regex(NestedInPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledGrouping = new(static () => new Regex(GroupingPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledNestedGrouping = new(static () => new Regex(NestedGroupingPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledNestedFilter = new(static () => new Regex(NestedFilterPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledNestedNestedFilter = new(static () => new Regex(NestedNestedFilterPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledArray = new(static () => new Regex(ArrayPattern, RegexOptions.Compiled));
+    private static readonly Lazy<Regex> CompiledNestedArray = new(static () => new Regex(NestedArrayPattern, RegexOptions.Compiled));
+
     // Escape config values before embedding in regex patterns (prevents ReDoS)
     private static string Esc(string s) => Regex.Escape(s);
     private static string EscJoin(IEnumerable<string> values) => string.Join("|", values.Select(Regex.Escape));
@@ -183,13 +200,13 @@ public static class TokenHelper
         return raw;
     }
 
-    public static bool IsComparisonOperation(string query) => Regex.IsMatch(query, ComparisonPattern) || Regex.IsMatch(query, NestedComparisonPattern);
+    public static bool IsComparisonOperation(string query) => CompiledComparison.Value.IsMatch(query) || CompiledNestedComparison.Value.IsMatch(query);
 
-    public static bool IsIsOperation(string query) => Regex.IsMatch(query, IsPattern) || Regex.IsMatch(query, NestedIsPattern);
+    public static bool IsIsOperation(string query) => CompiledIs.Value.IsMatch(query) || CompiledNestedIs.Value.IsMatch(query);
 
-    public static bool IsInOperation(string query) => Regex.IsMatch(query, InPattern) || Regex.IsMatch(query, NestedInPattern);
+    public static bool IsInOperation(string query) => CompiledIn.Value.IsMatch(query) || CompiledNestedIn.Value.IsMatch(query);
 
-    public static bool IsGroupingOperation(string query) => Regex.IsMatch(query, GroupingPattern) || Regex.IsMatch(query, NestedGroupingPattern);
+    public static bool IsGroupingOperation(string query) => CompiledGrouping.Value.IsMatch(query) || CompiledNestedGrouping.Value.IsMatch(query);
 
     public static bool IsSortOperation(string query) => query.StartsWith("sort(", StringComparison.OrdinalIgnoreCase);
 
@@ -201,11 +218,11 @@ public static class TokenHelper
 
     public static bool IsCountOperation(string query) => query.StartsWith("count.", StringComparison.OrdinalIgnoreCase);
 
-    public static bool IsDateRangeOperation(string query) => Regex.IsMatch(query, DateRangePattern) || Regex.IsMatch(query, NestedDateRangePattern);
+    public static bool IsDateRangeOperation(string query) => CompiledDateRange.Value.IsMatch(query) || CompiledNestedDateRange.Value.IsMatch(query);
 
     public static bool IsMetadataOperation(string query) => query.StartsWith("metaInclude=", StringComparison.OrdinalIgnoreCase);
 
-    public static bool IsNestedFilterOperation(string query) => Regex.IsMatch(query, NestedFilterPattern) || Regex.IsMatch(query, NestedNestedFilterPattern);
+    public static bool IsNestedFilterOperation(string query) => CompiledNestedFilter.Value.IsMatch(query) || CompiledNestedNestedFilter.Value.IsMatch(query);
 
-    public static bool IsArrayOperation(string query) => Regex.IsMatch(query, ArrayPattern) || Regex.IsMatch(query, NestedArrayPattern);
+    public static bool IsArrayOperation(string query) => CompiledArray.Value.IsMatch(query) || CompiledNestedArray.Value.IsMatch(query);
 }
