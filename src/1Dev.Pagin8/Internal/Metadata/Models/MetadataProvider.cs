@@ -67,14 +67,14 @@ public class MetadataProvider : IMetadataProvider
             flags.Add(ArrayFlag);
             if (arrayInnerType != typeof(string) && currentDepth < MaxSerializationDepth)
             {
-                var test = currentDepth + 1;
-                nestedProperties = Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(arrayInnerType, test).ToList();
+                var nextDepth = currentDepth + 1;
+                nestedProperties = Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(arrayInnerType, nextDepth).ToList();
             }
         }
         else if (propertyType.IsClass && propertyType != typeof(string) && currentDepth < MaxSerializationDepth)
         {
-            var test = currentDepth + 1;
-            nestedProperties = Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(propertyType, test).ToList();
+            var nextDepth = currentDepth + 1;
+            nestedProperties = Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(propertyType, nextDepth).ToList();
         }
 
         return new ColumnMetadata(columnName, typeStr, flags) { Properties = nestedProperties };
@@ -180,16 +180,8 @@ public class MetadataProvider : IMetadataProvider
             });
 
     private static bool IsNullAllowed(PropertyInfo propertyInfo)
-    {
-        var nullsAllowedAttribute = propertyInfo.GetCustomAttribute<NullsAllowedAttribute>();
-        if (nullsAllowedAttribute is not null)
-        {
-            return true;
-        }
-
-        var type = propertyInfo.PropertyType;
-        return Nullable.GetUnderlyingType(type) != null;
-    }
+        => propertyInfo.GetCustomAttribute<NullsAllowedAttribute>() is not null ||
+           Nullable.GetUnderlyingType(propertyInfo.PropertyType) != null;
 
     private static string UseTranslitColumn(MemberInfo propertyInfo)
     {

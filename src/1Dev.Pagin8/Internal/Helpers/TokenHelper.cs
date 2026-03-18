@@ -149,7 +149,7 @@ public static class TokenHelper
 
         parts.Add(currentPart.ToString().Trim());
 
-        return parts.ToArray();
+        return parts;
     }
 
     public static void RemoveTrailingComma(StringBuilder sb)

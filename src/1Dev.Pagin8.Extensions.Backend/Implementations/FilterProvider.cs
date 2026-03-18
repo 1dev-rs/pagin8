@@ -4,6 +4,7 @@ using _1Dev.Pagin8.Input;
 using Attributes;
 using Dapper;
 using InterpolatedSql.Dapper;
+using System.Collections.Concurrent;
 using System.Data;
 using System.Reflection;
 using System.Text.Json;
@@ -18,6 +19,29 @@ public class FilterProvider : IFilterProvider
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ISqlQueryBuilder _sqlQueryBuilder;
     private readonly int? _defaultCommandTimeout;
+
+    private static readonly ConcurrentDictionary<Type, IReadOnlyList<(PropertyInfo Property, string Func)>> AggregateColumnsCache = new();
+
+    private static IReadOnlyList<(PropertyInfo Property, string Func)> GetAggregateColumns(Type type)
+        => AggregateColumnsCache.GetOrAdd(type, static t =>
+            t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
+                .SelectMany(p => p.GetCustomAttributes()
+                    .Where(a => a.GetType().Name == nameof(AggregateAttribute))
+                    .Select(attr =>
+                    {
+                        var aggTypeStr = attr.GetType().GetProperty("AggregateType")?.GetValue(attr)?.ToString() ?? "Sum";
+                        var func = aggTypeStr switch
+                        {
+                            "Sum"   => "SUM",
+                            "Count" => "COUNT",
+                            "Min"   => "MIN",
+                            "Max"   => "MAX",
+                            "Avg"   => "AVG",
+                            _       => "SUM"
+                        };
+                        return (Property: p, Func: func);
+                    }))
+                .ToList());
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FilterProvider"/> class.
@@ -74,19 +98,17 @@ public class FilterProvider : IFilterProvider
             };
         }
 
-        // Kick off both queries without awaiting — they run concurrently.
+        // Both tasks start immediately (hot tasks) — they run concurrently.
         // The count uses its own pooled connection so neither blocks the other.
         var dataTask = FetchDataAsync<TResponse>(buildResult.Builder, query, timeout);
         var countTask = buildResult.Meta.ShowCount
             ? CountOnSeparateConnectionAsync<TResponse>(viewName, query, timeout)
             : Task.FromResult(0);
 
-        await Task.WhenAll(dataTask, countTask);
-
         return new PagedResults<TResponse>
         {
-            Data = dataTask.Result,
-            TotalRows = countTask.Result,
+            Data = await dataTask,
+            TotalRows = await countTask,
             Meta = buildResult.Meta
         };
     }
@@ -163,25 +185,7 @@ public class FilterProvider : IFilterProvider
     public async Task<IDictionary<string, decimal>> GetAggregatesAsync<T>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
         where T : class
     {
-        var columns = typeof(T)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
-            .SelectMany(p => p.GetCustomAttributes()
-                .Where(a => a.GetType().Name == nameof(AggregateAttribute))
-                .Select(attr =>
-                {
-                    var aggTypeStr = attr.GetType().GetProperty("AggregateType")?.GetValue(attr)?.ToString() ?? "Sum";
-                    var func = aggTypeStr switch
-                    {
-                        "Sum"   => "SUM",
-                        "Count" => "COUNT",
-                        "Min"   => "MIN",
-                        "Max"   => "MAX",
-                        "Avg"   => "AVG",
-                        _       => "SUM"
-                    };
-                    return (Property: p, Func: func);
-                }))
-            .ToList();
+        var columns = GetAggregateColumns(typeof(T));
 
         if (columns.Count == 0)
             return new Dictionary<string, decimal>();

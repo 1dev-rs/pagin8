@@ -27,6 +27,7 @@ public class SqlServerContainerFixture : IAsyncLifetime
     public SqlConnection? Connection { get; private set; }
     public int DatasetSize => _config.TestSettings.DatasetSize;
     public int Seed => _config.TestSettings.Seed;
+    public string? SkipReason { get; private set; }
     // Performance metrics collector removed; integration-only fixture
 
     public SqlServerContainerFixture()
@@ -48,7 +49,21 @@ public class SqlServerContainerFixture : IAsyncLifetime
             .Build();
 
         Console.WriteLine("Starting SQL Server container...");
-        await _container.StartAsync();
+        try
+        {
+            await _container.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            SkipReason =
+                $"SQL Server container failed to start. " +
+                $"Make sure Docker is running and the image is available locally.\n" +
+                $"  Pull command : docker pull {settings.Image}\n" +
+                $"  Image setting: test-config.json → testConfiguration.databases.sqlServer.image\n" +
+                $"  Inner error  : {ex.Message}";
+            Console.WriteLine($"[SKIP] {SkipReason}");
+            return;
+        }
         Console.WriteLine($"SQL Server container started: {_container.GetConnectionString()}");
 
         // Connect to the database

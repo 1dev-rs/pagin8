@@ -692,6 +692,28 @@ public async Task<IActionResult> Get()
 
 ### Advanced Usage
 
+#### Aggregates
+
+Use `GetAggregatesAsync` to compute aggregate values (SUM, COUNT, MIN, MAX, AVG) for properties decorated with `[Aggregate]`:
+
+```csharp
+// Decorate your DTO
+public class OrderDto
+{
+    public int Id { get; set; }
+    [Aggregate(AggregateType.Sum)] public decimal Amount { get; set; }
+    [Aggregate(AggregateType.Count)] public int Quantity { get; set; }
+}
+
+// Call from repository
+var aggregates = await _filterProvider.GetAggregatesAsync<OrderDto>("vw_orders", query);
+// Returns: { "amountSum": 15000.00, "quantityCount": 42 }
+```
+
+The aggregate keys follow the camelCase naming convention: `{fieldName}{AggregateType}` (e.g., `priceSum`, `stockMin`).
+
+---
+
 #### Custom Connection Factory
 
 ```csharp
@@ -1002,6 +1024,52 @@ public class QueryAuditInterceptor : IFilterProvider
 
 // Register it
 builder.Services.Decorate<IFilterProvider, QueryAuditInterceptor>();
+```
+
+---
+
+## 🧪 Running Integration Tests
+
+Integration tests spin up real databases in Docker using [Testcontainers](https://dotnet.testcontainers.org/). Before running them, make sure:
+
+1. **Docker is running** (Docker Desktop or Docker Engine)
+2. **Required images are pulled locally:**
+
+```bash
+docker pull mcr.microsoft.com/mssql/server:2022-latest
+docker pull postgres:16-alpine
+```
+
+If an image is missing, all tests in that collection will fail with a clear message telling you exactly which `docker pull` command to run and which `test-config.json` setting controls the image.
+
+### Configuration
+
+Test dataset size, seed, and Docker images are configured in [`src/1Dev.Pagin8.Test/IntegrationTests/test-config.json`](src/1Dev.Pagin8.Test/IntegrationTests/test-config.json):
+
+```json
+{
+  "testConfiguration": {
+    "datasetSize": 5000,
+    "seed": 42,
+    "databases": {
+      "sqlServer": { "image": "mcr.microsoft.com/mssql/server:2022-latest" },
+      "postgreSql": { "image": "postgres:16-alpine" }
+    }
+  }
+}
+```
+
+### Run commands
+
+```bash
+# Unit tests only (no Docker required)
+dotnet test src/1Dev.Pagin8.Test/1Dev.Pagin8.Test.csproj --filter "FullyQualifiedName!~IntegrationTests"
+
+# SQL Server integration tests
+dotnet test src/1Dev.Pagin8.Test/1Dev.Pagin8.Test.csproj --filter "FullyQualifiedName~SqlServerContainerIntegrationTests"
+
+# PostgreSQL integration tests
+dotnet test src/1Dev.Pagin8.Test/1Dev.Pagin8.Test.csproj --filter "FullyQualifiedName~PostgreSqlContainerIntegrationTests"
 ```
 
 ---

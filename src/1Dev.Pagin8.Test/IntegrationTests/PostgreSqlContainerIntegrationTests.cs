@@ -13,6 +13,7 @@ using Dapper;
 using FluentAssertions;
 using Internal.Configuration;
 using System.Runtime.CompilerServices;
+using Xunit;
 using Xunit.Abstractions;
 
 namespace _1Dev.Pagin8.Test.IntegrationTests;
@@ -343,6 +344,9 @@ public class PostgreSqlContainerIntegrationTests
 
     private async Task<List<Product>> ExecuteQuery(string queryString, [CallerMemberName] string testName = "")
     {
+        if (_fixture.SkipReason != null)
+            Assert.True(false, _fixture.SkipReason);
+
         var sw = System.Diagnostics.Stopwatch.StartNew();
         
         var parameters = QueryBuilderParameters.Create(
