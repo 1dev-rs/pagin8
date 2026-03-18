@@ -341,8 +341,8 @@ public class SqlServerContainerIntegrationTests
 
     private async Task<List<Product>> ExecuteQuery(string queryString, [CallerMemberName] string testName = "")
     {
-        if (_fixture.SkipReason != null)
-            Assert.True(false, _fixture.SkipReason);
+        if (_fixture.ContainerStartFailure != null)
+            Assert.Fail(_fixture.ContainerStartFailure);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         

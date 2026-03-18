@@ -27,7 +27,7 @@ public class PostgreSqlContainerFixture : IAsyncLifetime
     public NpgsqlConnection? Connection { get; private set; }
     public int DatasetSize => _config.TestSettings.DatasetSize;
     public int Seed => _config.TestSettings.Seed;
-    public string? SkipReason { get; private set; }
+    public string? ContainerStartFailure { get; private set; }
     // Performance metrics collector removed; integration tests only
 
     public PostgreSqlContainerFixture()
@@ -56,13 +56,13 @@ public class PostgreSqlContainerFixture : IAsyncLifetime
         }
         catch (Exception ex)
         {
-            SkipReason =
+            ContainerStartFailure =
                 $"PostgreSQL container failed to start. " +
                 $"Make sure Docker is running and the image is available locally.\n" +
                 $"  Pull command : docker pull {settings.Image}\n" +
-                $"  Image setting: test-config.json → testConfiguration.databases.postgreSql.image\n" +
+                $"  Image setting: test-config.json \u2192 testConfiguration.databases.postgreSql.image\n" +
                 $"  Inner error  : {ex.Message}";
-            Console.WriteLine($"[SKIP] {SkipReason}");
+            Console.WriteLine($"[ERROR] {ContainerStartFailure}");
             return;
         }
         Console.WriteLine($"PostgreSQL container started: {_container.GetConnectionString()}");

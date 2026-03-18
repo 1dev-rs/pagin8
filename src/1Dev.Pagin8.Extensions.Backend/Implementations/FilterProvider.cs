@@ -25,18 +25,31 @@ public class FilterProvider : IFilterProvider
     private static IReadOnlyList<(PropertyInfo Property, string Func)> GetAggregateColumns(Type type)
         => AggregateColumnsCache.GetOrAdd(type, static t =>
             t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
-                .SelectMany(p => p.GetCustomAttributes<AggregateAttribute>()
+                .SelectMany(p => p.GetCustomAttributes()
+                    .Where(a => a.GetType().Name == nameof(AggregateAttribute))
                     .Select(attr =>
                     {
-                        var func = attr.AggregateType switch
-                        {
-                            AggregateType.Sum   => "SUM",
-                            AggregateType.Count => "COUNT",
-                            AggregateType.Min   => "MIN",
-                            AggregateType.Max   => "MAX",
-                            AggregateType.Avg   => "AVG",
-                            _                   => "SUM"
-                        };
+                        // Prefer strongly-typed path for Attributes.AggregateAttribute.
+                        // Fall back to reflection for any same-named attribute from another namespace.
+                        var func = attr is AggregateAttribute typed
+                            ? typed.AggregateType switch
+                            {
+                                AggregateType.Sum   => "SUM",
+                                AggregateType.Count => "COUNT",
+                                AggregateType.Min   => "MIN",
+                                AggregateType.Max   => "MAX",
+                                AggregateType.Avg   => "AVG",
+                                _                   => "SUM"
+                            }
+                            : (attr.GetType().GetProperty("AggregateType")?.GetValue(attr)?.ToString() ?? "Sum") switch
+                            {
+                                "Sum"   => "SUM",
+                                "Count" => "COUNT",
+                                "Min"   => "MIN",
+                                "Max"   => "MAX",
+                                "Avg"   => "AVG",
+                                _       => "SUM"
+                            };
                         return (Property: p, Func: func);
                     }))
                 .ToList());
@@ -96,17 +109,15 @@ public class FilterProvider : IFilterProvider
             };
         }
 
-        // Both tasks start immediately (hot tasks) — they run concurrently.
-        // The count uses its own pooled connection so neither blocks the other.
-        var dataTask = FetchDataAsync<TResponse>(buildResult.Builder, query, timeout);
-        var countTask = buildResult.Meta.ShowCount
-            ? CountOnSeparateConnectionAsync<TResponse>(viewName, query, timeout)
-            : Task.FromResult(0);
+        var data = await FetchDataAsync<TResponse>(buildResult.Builder, query, timeout);
+        var count = buildResult.Meta.ShowCount
+            ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout)
+            : 0;
 
         return new PagedResults<TResponse>
         {
-            Data = await dataTask,
-            TotalRows = await countTask,
+            Data = data,
+            TotalRows = count,
             Meta = buildResult.Meta
         };
     }
@@ -125,15 +136,6 @@ public class FilterProvider : IFilterProvider
         }
 
         return await builder.QueryAsync<TResponse>(commandTimeout: timeout);
-    }
-
-    private async Task<int> CountOnSeparateConnectionAsync<TResponse>(
-        string viewName,
-        FilteredDataQuery query,
-        int? timeout) where TResponse : class
-    {
-        using var countConnection = _connectionFactory.Create();
-        return await GetCountInternalAsync<TResponse>(countConnection, viewName, query, timeout);
     }
 
     /// <summary>
@@ -179,6 +181,12 @@ public class FilterProvider : IFilterProvider
     /// <summary>
     /// Gets aggregate values for properties decorated with <see cref="AggregateAttribute"/>.
     /// </summary>
+    /// <remarks>
+    /// The concrete <see cref="AggregateAttribute"/> type (namespace <c>Attributes</c>) is
+    /// recognized via a strongly-typed path. Any other attribute whose simple type name is also
+    /// <c>AggregateAttribute</c> and that exposes an <c>AggregateType</c> property is supported
+    /// via a reflection fallback, preserving backward compatibility with convention-based usage.
+    /// </remarks>
     public async Task<IDictionary<string, decimal>> GetAggregatesAsync<T>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
         where T : class
     {
