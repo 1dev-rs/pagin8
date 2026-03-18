@@ -17,18 +17,18 @@ public class MetadataProvider : IMetadataProvider
 
     // Shared across all instances — entity types and their attributes never change at runtime.
     private static readonly BindingFlags LookupFlags = BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance;
-    private static readonly ConcurrentDictionary<(Type, string), PropertyInfo?> PropertyCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, PropertyInfo?> PropertyCache = new();
     private static readonly ConcurrentDictionary<Type, string> EntityKeyCache = new();
-    private static readonly ConcurrentDictionary<(Type, string), bool> FilterableCache = new();
-    private static readonly ConcurrentDictionary<(Type, string), bool> SortableCache = new();
-    private static readonly ConcurrentDictionary<(Type, string), bool> InMetaCache = new();
-    private static readonly ConcurrentDictionary<(Type, string), bool> NullAllowedCache = new();
-    private static readonly ConcurrentDictionary<(Type, string), TypeCode> TypeCodeCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, bool> FilterableCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, bool> SortableCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, bool> InMetaCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, bool> NullAllowedCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, TypeCode> TypeCodeCache = new();
 
     private static PropertyInfo? GetCachedProperty(Type type, string propertyName)
         => PropertyCache.GetOrAdd(
-            (type, propertyName.ToLowerInvariant()),
-            static key => key.Item1.GetProperty(key.Item2, LookupFlags));
+            new TypeNameKey(type, propertyName),
+            static key => key.Type.GetProperty(key.Name, LookupFlags));
 
     public IEnumerable<ColumnMetadata> Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(Type entityType, int currentDepth = 0) where TNonFilterableAttribute : Attribute where TNonSortable : Attribute where TMetaExclude : Attribute
     {
@@ -138,10 +138,10 @@ public class MetadataProvider : IMetadataProvider
 
     public TypeCode GetTypeCodeForProperty(Type entityType, string propertyName)
         => TypeCodeCache.GetOrAdd(
-            (entityType, propertyName.ToLowerInvariant()),
+            new TypeNameKey(entityType, propertyName),
             static key =>
             {
-                var property = GetCachedProperty(key.Item1, key.Item2);
+                var property = GetCachedProperty(key.Type, key.Name);
                 Guard.AgainstNull(property);
                 var propertyType = Nullable.GetUnderlyingType(property!.PropertyType) ?? property.PropertyType;
                 return Type.GetTypeCode(propertyType);
@@ -149,33 +149,33 @@ public class MetadataProvider : IMetadataProvider
 
     public bool IsFieldFilterable(Type entityType, string propertyName)
         => FilterableCache.GetOrAdd(
-            (entityType, propertyName.ToLowerInvariant()),
+            new TypeNameKey(entityType, propertyName),
             static key =>
             {
-                var prop = GetCachedProperty(key.Item1, key.Item2);
+                var prop = GetCachedProperty(key.Type, key.Name);
                 return prop != null && prop.GetCustomAttribute<NonFilterableAttribute>() is null;
             });
 
     public bool IsFieldSortable(Type entityType, string propertyName)
         => SortableCache.GetOrAdd(
-            (entityType, propertyName.ToLowerInvariant()),
+            new TypeNameKey(entityType, propertyName),
             static key =>
             {
-                var prop = GetCachedProperty(key.Item1, key.Item2);
+                var prop = GetCachedProperty(key.Type, key.Name);
                 return prop != null && prop.GetCustomAttribute<NonSortableAttribute>() is null;
             });
 
     public bool IsFieldInMeta(Type entityType, string propertyName)
         => InMetaCache.GetOrAdd(
-            (entityType, propertyName.ToLowerInvariant()),
-            static key => GetCachedProperty(key.Item1, key.Item2) != null);
+            new TypeNameKey(entityType, propertyName),
+            static key => GetCachedProperty(key.Type, key.Name) != null);
 
     public bool IsNullAllowed(Type entityType, string propertyName)
         => NullAllowedCache.GetOrAdd(
-            (entityType, propertyName.ToLowerInvariant()),
+            new TypeNameKey(entityType, propertyName),
             static key =>
             {
-                var prop = GetCachedProperty(key.Item1, key.Item2);
+                var prop = GetCachedProperty(key.Type, key.Name);
                 return prop != null && prop.GetCustomAttribute<NullsAllowedAttribute>() is not null;
             });
 
@@ -213,4 +213,22 @@ public class MetadataProvider : IMetadataProvider
         };
         return typeStr;
     }
+}
+
+/// <summary>
+/// Cache key combining a CLR type and a property name compared ordinal-ignore-case,
+/// avoiding per-call string allocations from ToLowerInvariant().
+/// </summary>
+internal readonly struct TypeNameKey(Type type, string name) : IEquatable<TypeNameKey>
+{
+    public Type Type { get; } = type;
+    public string Name { get; } = name;
+
+    public bool Equals(TypeNameKey other)
+        => Type == other.Type && string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase);
+
+    public override bool Equals(object? obj) => obj is TypeNameKey k && Equals(k);
+
+    public override int GetHashCode()
+        => HashCode.Combine(Type, string.GetHashCode(Name, StringComparison.OrdinalIgnoreCase));
 }

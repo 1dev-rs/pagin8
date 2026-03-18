@@ -25,19 +25,17 @@ public class FilterProvider : IFilterProvider
     private static IReadOnlyList<(PropertyInfo Property, string Func)> GetAggregateColumns(Type type)
         => AggregateColumnsCache.GetOrAdd(type, static t =>
             t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
-                .SelectMany(p => p.GetCustomAttributes()
-                    .Where(a => a.GetType().Name == nameof(AggregateAttribute))
+                .SelectMany(p => p.GetCustomAttributes<AggregateAttribute>()
                     .Select(attr =>
                     {
-                        var aggTypeStr = attr.GetType().GetProperty("AggregateType")?.GetValue(attr)?.ToString() ?? "Sum";
-                        var func = aggTypeStr switch
+                        var func = attr.AggregateType switch
                         {
-                            "Sum"   => "SUM",
-                            "Count" => "COUNT",
-                            "Min"   => "MIN",
-                            "Max"   => "MAX",
-                            "Avg"   => "AVG",
-                            _       => "SUM"
+                            AggregateType.Sum   => "SUM",
+                            AggregateType.Count => "COUNT",
+                            AggregateType.Min   => "MIN",
+                            AggregateType.Max   => "MAX",
+                            AggregateType.Avg   => "AVG",
+                            _                   => "SUM"
                         };
                         return (Property: p, Func: func);
                     }))
@@ -179,8 +177,7 @@ public class FilterProvider : IFilterProvider
     }
 
     /// <summary>
-    /// Gets aggregate values for properties decorated with any attribute named AggregateAttribute
-    /// that exposes an AggregateType property (convention-based, namespace-agnostic).
+    /// Gets aggregate values for properties decorated with <see cref="AggregateAttribute"/>.
     /// </summary>
     public async Task<IDictionary<string, decimal>> GetAggregatesAsync<T>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
         where T : class
