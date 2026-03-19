@@ -307,4 +307,60 @@ public class FilterProviderSqlServerGenerationTests
 
         result.Builder.Should().NotBeNull();
     }
+
+    // -----------------------------------------------------------------------
+    // stw.in / enw.in -- LIKE-family InToken on text fields
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Should_GenerateLikeClauses_WhenStwInFilterProvided()
+    {
+        // name=stw.in.(Alice,Bob) should generate OR-connected LIKE conditions, not IN
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=stw.in.(Alice,Bob)"));
+
+        var sql = result.Builder!.AsSql().Sql;
+
+        sql.Should().Contain("LOWER(name) LIKE @p0");
+        sql.Should().Contain("LOWER(name) LIKE @p1");
+        sql.Should().Contain(" OR ");
+        sql.Should().NotContain(" IN (");
+    }
+
+    [Fact]
+    public void Should_AppendWildcardToParameters_WhenStwInFilterProvided()
+    {
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=stw.in.(Alice,Bob)"));
+
+        var p = result.Builder!.Build().SqlParameters;
+        p.Should().Contain(sp => (sp.Argument as string) != null && ((string)sp.Argument).EndsWith("%"));
+    }
+
+    [Fact]
+    public void Should_GenerateNotLikeClauses_WhenNotStwInFilterProvided()
+    {
+        // name=not.stw.in.(EPP,TAR) should generate NOT (LOWER(col) LIKE ... OR ...) -- not NOT IN
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=not.stw.in.(EPP,TAR)"));
+
+        var sql = result.Builder!.AsSql().Sql;
+
+        sql.Should().Contain("NOT (");
+        sql.Should().Contain("LOWER(name) LIKE @p0");
+        sql.Should().Contain("LOWER(name) LIKE @p1");
+        sql.Should().NotContain("NOT IN");
+    }
+
+    [Fact]
+    public void Should_GenerateNotLikeClauses_WhenNestedNotStwInFilterProvided()
+    {
+        // Nested form: or=(and(name.not.stw.in.(EPP,TAR))) -- this is the real-world trigger
+        var result = _sut.BuildSqlQuery<TestEntity>(
+            Build("or=(and(name.not.stw.in.(EPP,TAR)))"));
+
+        var sql = result.Builder!.AsSql().Sql;
+
+        sql.Should().Contain("NOT (");
+        sql.Should().Contain("LOWER(name) LIKE @p0");
+        sql.Should().Contain("LOWER(name) LIKE @p1");
+        sql.Should().NotContain("NOT IN");
+    }
 }

@@ -542,6 +542,28 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
                 : (FormattableString)$"1=0";
         }
 
+        // For LIKE-family operators (stw/enw/like/cs), FormatComparisonValue has already appended
+        // the appropriate wildcard characters (e.g. 'epp%' for StartsWith).
+        // Generate OR-connected LIKE clauses — NOT IN with wildcards is treated as a literal match,
+        // not a pattern match, which would be semantically wrong.
+        if (token.Comparison is ComparisonOperator.StartsWith or
+                                ComparisonOperator.EndsWith or
+                                ComparisonOperator.Contains or
+                                ComparisonOperator.Like)
+        {
+            var escape = TryEscapeSpecialChars(token.Comparison);
+            FormattableString likeClauses = $"LOWER({column:raw}) LIKE {values[0]} {escape:raw}";
+            for (var i = 1; i < values.Count; i++)
+            {
+                likeClauses = $"{likeClauses} OR LOWER({column:raw}) LIKE {values[i]} {escape:raw}";
+            }
+            // Parens are required: without them, OR clauses in a multi-value case would break
+            // AND/OR precedence when this clause appears at the top level (not inside a GroupToken).
+            return token.IsNegated
+                ? (FormattableString)$"NOT ({likeClauses})"
+                : (FormattableString)$"({likeClauses})";
+        }
+
         // OPTIMIZATION: Use SQL Server's IN clause with LOWER() for case-insensitive comparison
         // This is more efficient than multiple OR conditions
         // LOWER(column) IN (@p0, @p1, @p2)
