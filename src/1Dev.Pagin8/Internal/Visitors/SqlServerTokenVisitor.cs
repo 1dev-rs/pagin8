@@ -46,12 +46,21 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
     {
         var builder = result.Builder;
 
+        // When a group is negated (e.g. not.or=(...)), use CASE WHEN to coalesce
+        // NULL to FALSE before negating. In C#/LINQ, null comparisons return false,
+        // so NOT(false || false) = true — the row is included. In SQL, NULL comparisons
+        // propagate NULL through OR/AND, and NOT(NULL) = NULL — the row is excluded.
+        // Wrapping in CASE WHEN makes SQL match the C#/LINQ semantics: if the group
+        // expression is NULL (all conditions involve NULL columns from e.g. LEFT JOINs),
+        // the ELSE branch yields 1, so the row is correctly included.
         if (groupToken.IsNegated)
         {
-            builder += $"{EngineDefaults.Config.Negation:raw} ";
+            builder += $"(CASE WHEN (";
         }
-
-        builder += $"(";
+        else
+        {
+            builder += $"(";
+        }
 
         if (!string.IsNullOrEmpty(groupToken.JsonPath))
         {
@@ -70,7 +79,14 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
             }
         }
 
-        builder += $")";
+        if (groupToken.IsNegated)
+        {
+            builder += $") THEN 0 ELSE 1 END = 1)";
+        }
+        else
+        {
+            builder += $")";
+        }
 
         return result;
     }
