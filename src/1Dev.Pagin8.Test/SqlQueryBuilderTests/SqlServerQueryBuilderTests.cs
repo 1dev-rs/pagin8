@@ -315,9 +315,10 @@ public class SqlServerQueryBuilderTests
         var sql = result.Builder.AsSql().Sql;
         var @params = result.Builder.Build().SqlParameters;
 
-        // The query "name.stw.in.(karate,)" parses as: IN operator with starts-with 'karate'
+        // The query "name.stw.in.(karate,)" parses as: IN operator with starts-with 'karate%'.
+        // The LIKE branch is used (not IN) so the wildcard is applied as a pattern, not a literal.
         sql.Should().Be(
-            "AND (LOWER(name) = @p0) ORDER BY id ASC OFFSET 0 ROWS FETCH NEXT @p1 ROWS ONLY"
+            "AND ((LOWER(name) LIKE @p0 ESCAPE '\\' )) ORDER BY id ASC OFFSET 0 ROWS FETCH NEXT @p1 ROWS ONLY"
         );
         
         @params.Should().HaveCount(2);

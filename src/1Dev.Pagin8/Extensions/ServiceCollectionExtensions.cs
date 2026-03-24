@@ -79,7 +79,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ITokenizationService, TokenizationService>();
         services.AddTransient(typeof(ILinqTokenVisitor<>), typeof(LinqTokenVisitor<>));
         services.AddTransient<IContextValidator, TokenContextValidator>();
-        services.AddTransient<IMetadataProvider, MetadataProvider>();
+        services.AddSingleton<IMetadataProvider, MetadataProvider>();
         services.AddTransient<IPagin8MetadataProvider, Pagin8MetadataProvider>();
         services.AddTransient<SqlQueryBuilder>();
         services.AddTransient<ISqlQueryBuilder>(sp =>

@@ -307,4 +307,338 @@ public class FilterProviderSqlServerGenerationTests
 
         result.Builder.Should().NotBeNull();
     }
+
+    // -----------------------------------------------------------------------
+    // stw.in / enw.in -- LIKE-family InToken on text fields
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Should_GenerateLikeClauses_WhenStwInFilterProvided()
+    {
+        // name=stw.in.(Alice,Bob) should generate OR-connected LIKE conditions, not IN
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=stw.in.(Alice,Bob)"));
+
+        var sql = result.Builder!.AsSql().Sql;
+
+        sql.Should().Contain("LOWER(name) LIKE @p0");
+        sql.Should().Contain("LOWER(name) LIKE @p1");
+        sql.Should().Contain(" OR ");
+        sql.Should().NotContain(" IN (");
+    }
+
+    [Fact]
+    public void Should_AppendWildcardToParameters_WhenStwInFilterProvided()
+    {
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=stw.in.(Alice,Bob)"));
+
+        var p = result.Builder!.Build().SqlParameters;
+        p.Should().Contain(sp => (sp.Argument as string) != null && ((string)sp.Argument).EndsWith("%"));
+    }
+
+    [Fact]
+    public void Should_GenerateNotLikeClauses_WhenNotStwInFilterProvided()
+    {
+        // name=not.stw.in.(EPP,TAR) should generate NOT (LOWER(col) LIKE ... OR ...) -- not NOT IN
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=not.stw.in.(EPP,TAR)"));
+
+        var sql = result.Builder!.AsSql().Sql;
+
+        sql.Should().Contain("NOT (");
+        sql.Should().Contain("LOWER(name) LIKE @p0");
+        sql.Should().Contain("LOWER(name) LIKE @p1");
+        sql.Should().NotContain("NOT IN");
+    }
+
+    [Fact]
+    public void Should_GenerateNotLikeClauses_WhenNestedNotStwInFilterProvided()
+    {
+        // Nested form: or=(and(name.not.stw.in.(EPP,TAR))) -- this is the real-world trigger
+        var result = _sut.BuildSqlQuery<TestEntity>(
+            Build("or=(and(name.not.stw.in.(EPP,TAR)))"));
+
+        var sql = result.Builder!.AsSql().Sql;
+
+        sql.Should().Contain("NOT (");
+        sql.Should().Contain("LOWER(name) LIKE @p0");
+        sql.Should().Contain("LOWER(name) LIKE @p1");
+        sql.Should().NotContain("NOT IN");
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional comparison operators
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Should_GenerateLessThanClause_WhenLtOperatorOnNumericField()
+    {
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("amount=lt.100"));
+
+        result.Builder!.AsSql().Sql.Should().Contain("amount < @p0");
+    }
+
+    [Fact]
+    public void Should_GenerateLessThanOrEqualClause_WhenLteOperatorOnNumericField()
+    {
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("amount=lte.100"));
+
+        result.Builder!.AsSql().Sql.Should().Contain("amount <= @p0");
+    }
+
+    [Fact]
+    public void Should_GenerateGreaterThanOrEqualClause_WhenGteOperatorOnNumericField()
+    {
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("amount=gte.100"));
+
+        result.Builder!.AsSql().Sql.Should().Contain("amount >= @p0");
+    }
+
+    [Fact]
+    public void Should_GenerateStartsWithPattern_WhenStwOperatorUsed()
+    {
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=stw.alice"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("LIKE");
+
+        var p = result.Builder.Build().SqlParameters;
+        p[0].Argument.Should().Be("alice%");
+    }
+
+    [Fact]
+    public void Should_GenerateEndsWithPattern_WhenEnwOperatorUsed()
+    {
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=enw.alice"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("LIKE");
+
+        var p = result.Builder.Build().SqlParameters;
+        p[0].Argument.Should().Be("%alice");
+    }
+
+    [Fact]
+    public void Should_GenerateLikeClause_WhenLikeOperatorUsed()
+    {
+        // like operator uses LIKE without adding wildcards — the caller supplies the pattern
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=like.alice"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("LIKE");
+
+        var p = result.Builder.Build().SqlParameters;
+        p[0].Argument.Should().Be("alice");
+    }
+
+    // -----------------------------------------------------------------------
+    // Is operator (SQL Server specific bool translation)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Should_GenerateIsNullOrEmptyClause_WhenIsEmptyOnTextField()
+    {
+        // is.$empty on a text field → field IS NULL OR field = ''
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=is.$empty"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("IS NULL");
+        sql.Should().Contain("= ''");
+        sql.Should().Contain("OR");
+    }
+
+    [Fact]
+    public void Should_GenerateIsNullClause_WhenIsEmptyOnNumericField()
+    {
+        // is.$empty on a non-text field → only NULL check
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("amount=is.$empty"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("IS");
+        sql.Should().Contain("NULL");
+        sql.Should().NotContain("= ''");
+    }
+
+    [Fact]
+    public void Should_GenerateIsNotNullAndNotEmptyClause_WhenNegatedIsEmptyOnTextField()
+    {
+        // is.not.$empty on a text field → field IS NOT NULL AND field <> ''
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=is.not.$empty"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("IS NOT NULL");
+        sql.Should().Contain("<> ''");
+        sql.Should().Contain("AND");
+    }
+
+    [Fact]
+    public void Should_GenerateEqualOne_WhenIsTrueOnBoolField()
+    {
+        // SQL Server: IS TRUE → = @p (bit param = 1); no IS TRUE literal support
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("isActive=is.true"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("isActive");
+        sql.Should().Contain("= @p");
+
+        var p = result.Builder.Build().SqlParameters;
+        p.Should().Contain(sp => sp.Argument.Equals(1));
+    }
+
+    [Fact]
+    public void Should_GenerateEqualZero_WhenIsFalseOnBoolField()
+    {
+        // SQL Server: IS FALSE → = @p (bit param = 0)
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("isActive=is.false"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("isActive");
+        sql.Should().Contain("= @p");
+
+        var p = result.Builder.Build().SqlParameters;
+        p.Should().Contain(sp => sp.Argument.Equals(0));
+    }
+
+    [Fact]
+    public void Should_GenerateNotEqualOne_WhenNegatedIsTrueOnBoolField()
+    {
+        // SQL Server: IS NOT TRUE → <> @p (bit param = 1)
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("isActive=is.not.true"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("isActive");
+        sql.Should().Contain("<> @p");
+
+        var p = result.Builder.Build().SqlParameters;
+        p.Should().Contain(sp => sp.Argument.Equals(1));
+    }
+
+    // -----------------------------------------------------------------------
+    // Negated operators
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Should_WrapInNullCheck_WhenNotEqualityOnTextField()
+    {
+        // not.eq on text → NOT LIKE wrapped with OR IS NULL
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=not.eq.Alice"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("NOT LIKE");
+        sql.Should().Contain("IS NULL");
+    }
+
+    [Fact]
+    public void Should_WrapInNullCheck_WhenNotContainsOnTextField()
+    {
+        // not.cs on text → NOT LIKE with wildcard, wrapped with OR IS NULL
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=not.cs.test"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("NOT LIKE");
+        sql.Should().Contain("IS NULL");
+
+        var p = result.Builder.Build().SqlParameters;
+        p[0].Argument.Should().Be("%test%");
+    }
+
+    [Fact]
+    public void Should_GenerateNotInWithLower_WhenNotInOperatorOnStringField()
+    {
+        // not.in on text → LOWER(col) NOT IN(...) wrapped with OR IS NULL
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=not.in.(alice,bob)"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("NOT IN");
+        sql.Should().Contain("IS NULL");
+    }
+
+    [Fact]
+    public void Should_GenerateNotInClause_WhenNotInOperatorOnNumericField()
+    {
+        // not.in on a numeric field → standard NOT IN(...) wrapped with OR IS NULL
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("id=not.in.(1,2,3)"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("NOT IN");
+        sql.Should().Contain("IS NULL");
+    }
+
+    // -----------------------------------------------------------------------
+    // Date range
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Should_GenerateBetweenClause_WhenForDateRangeOperator()
+    {
+        // field=for.7d → BETWEEN <startDate> AND <endDate>
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("createdDate=for.7d"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("createdDate");
+        sql.Should().Contain("BETWEEN");
+        sql.Should().Contain("AND");
+    }
+
+    [Fact]
+    public void Should_GenerateBetweenClause_WhenAgoDateRangeOperator()
+    {
+        // field=ago.7d → BETWEEN <startDate> AND <endDate> (direction reversed)
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("createdDate=ago.7d"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("createdDate");
+        sql.Should().Contain("BETWEEN");
+        sql.Should().Contain("AND");
+    }
+
+    // -----------------------------------------------------------------------
+    // Multiple filters
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Should_ApplyBothFilters_WhenMultipleFiltersProvidedViaAmpersand()
+    {
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("name=eq.Alice&amount=gt.100"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("name");
+        sql.Should().Contain("amount");
+        sql.Should().Contain("LIKE");
+        sql.Should().Contain(">");
+    }
+
+    // -----------------------------------------------------------------------
+    // SQL Server-specific: ORDER BY fallback is covered by TryAddDefault which
+    // always injects the primary-key sort when no explicit sort is provided.
+    // The ORDER BY (SELECT NULL) guard in the visitor is a defensive safety net
+    // for direct PagingToken construction with Sort=null.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Should_AlwaysHaveOrderBy_WhenPagingWithLimitButNoExplicitSort()
+    {
+        // TryAddDefault fills in the primary-key sort whenever none is provided,
+        // so even paging=(limit.10) alone still gets ORDER BY id ASC.
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("paging=(limit.10)"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("ORDER BY");
+        sql.Should().Contain("FETCH NEXT");
+        sql.Should().NotContain("ORDER BY (SELECT NULL)");
+    }
+
+    // -----------------------------------------------------------------------
+    // Negated group
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Should_NegateGroup_WhenNotAndGroupProvided()
+    {
+        var result = _sut.BuildSqlQuery<TestEntity>(Build("not.and=(name.cs.foo,status.eq.bar)"));
+
+        var sql = result.Builder!.AsSql().Sql;
+        sql.Should().Contain("not");
+        sql.Should().Contain("(");
+        sql.Should().Contain("name");
+        sql.Should().Contain("status");
+    }
 }

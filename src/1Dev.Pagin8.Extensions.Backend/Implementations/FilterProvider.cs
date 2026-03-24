@@ -4,6 +4,7 @@ using _1Dev.Pagin8.Input;
 using Attributes;
 using Dapper;
 using InterpolatedSql.Dapper;
+using System.Collections.Concurrent;
 using System.Data;
 using System.Reflection;
 using System.Text.Json;
@@ -18,6 +19,40 @@ public class FilterProvider : IFilterProvider
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ISqlQueryBuilder _sqlQueryBuilder;
     private readonly int? _defaultCommandTimeout;
+
+    private static readonly ConcurrentDictionary<Type, IReadOnlyList<(PropertyInfo Property, string Func)>> AggregateColumnsCache = new();
+
+    private static IReadOnlyList<(PropertyInfo Property, string Func)> GetAggregateColumns(Type type)
+        => AggregateColumnsCache.GetOrAdd(type, static t =>
+            t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
+                .SelectMany(p => p.GetCustomAttributes()
+                    .Where(a => a.GetType().Name == nameof(AggregateAttribute))
+                    .Select(attr =>
+                    {
+                        // Prefer strongly-typed path for Attributes.AggregateAttribute.
+                        // Fall back to reflection for any same-named attribute from another namespace.
+                        var func = attr is AggregateAttribute typed
+                            ? typed.AggregateType switch
+                            {
+                                AggregateType.Sum   => "SUM",
+                                AggregateType.Count => "COUNT",
+                                AggregateType.Min   => "MIN",
+                                AggregateType.Max   => "MAX",
+                                AggregateType.Avg   => "AVG",
+                                _                   => "SUM"
+                            }
+                            : (attr.GetType().GetProperty("AggregateType")?.GetValue(attr)?.ToString() ?? "Sum") switch
+                            {
+                                "Sum"   => "SUM",
+                                "Count" => "COUNT",
+                                "Min"   => "MIN",
+                                "Max"   => "MAX",
+                                "Avg"   => "AVG",
+                                _       => "SUM"
+                            };
+                        return (Property: p, Func: func);
+                    }))
+                .ToList());
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FilterProvider"/> class.
@@ -74,23 +109,7 @@ public class FilterProvider : IFilterProvider
             };
         }
 
-        IEnumerable<TResponse> data;
-
-        if (query.IsJson)
-        {
-            // isJson=true: the SQL is wrapped in SELECT COALESCE(json_agg(items), '[]') FROM (...) items
-            // This returns ONE row with ONE column — a raw JSON array string.
-            // QueryAsync<string>() reads it, then we deserialize into the typed collection.
-            var json = await buildResult.Builder.QueryFirstOrDefaultAsync<string>(commandTimeout: timeout);
-            data = string.IsNullOrEmpty(json) || json == "[]"
-                ? []
-                : JsonSerializer.Deserialize<IEnumerable<TResponse>>(json, JsonOptions) ?? [];
-        }
-        else
-        {
-            data = await buildResult.Builder.QueryAsync<TResponse>(commandTimeout: timeout);
-        }
-
+        var data = await FetchDataAsync<TResponse>(buildResult.Builder, query, timeout);
         var count = buildResult.Meta.ShowCount
             ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout)
             : 0;
@@ -101,6 +120,22 @@ public class FilterProvider : IFilterProvider
             TotalRows = count,
             Meta = buildResult.Meta
         };
+    }
+
+    private async Task<IEnumerable<TResponse>> FetchDataAsync<TResponse>(
+        InterpolatedSql.Dapper.SqlBuilders.QueryBuilder builder,
+        FilteredDataQuery query,
+        int? timeout) where TResponse : class
+    {
+        if (query.IsJson)
+        {
+            var json = await builder.QueryFirstOrDefaultAsync<string>(commandTimeout: timeout);
+            return string.IsNullOrEmpty(json) || json == "[]"
+                ? []
+                : JsonSerializer.Deserialize<IEnumerable<TResponse>>(json, JsonOptions) ?? [];
+        }
+
+        return await builder.QueryAsync<TResponse>(commandTimeout: timeout);
     }
 
     /// <summary>
@@ -144,31 +179,18 @@ public class FilterProvider : IFilterProvider
     }
 
     /// <summary>
-    /// Gets aggregate values for properties decorated with any attribute named AggregateAttribute
-    /// that exposes an AggregateType property (convention-based, namespace-agnostic).
+    /// Gets aggregate values for properties decorated with <see cref="AggregateAttribute"/>.
     /// </summary>
+    /// <remarks>
+    /// The concrete <see cref="AggregateAttribute"/> type (namespace <c>Attributes</c>) is
+    /// recognized via a strongly-typed path. Any other attribute whose simple type name is also
+    /// <c>AggregateAttribute</c> and that exposes an <c>AggregateType</c> property is supported
+    /// via a reflection fallback, preserving backward compatibility with convention-based usage.
+    /// </remarks>
     public async Task<IDictionary<string, decimal>> GetAggregatesAsync<T>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
         where T : class
     {
-        var columns = typeof(T)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
-            .SelectMany(p => p.GetCustomAttributes()
-                .Where(a => a.GetType().Name == nameof(AggregateAttribute))
-                .Select(attr =>
-                {
-                    var aggTypeStr = attr.GetType().GetProperty("AggregateType")?.GetValue(attr)?.ToString() ?? "Sum";
-                    var func = aggTypeStr switch
-                    {
-                        "Sum"   => "SUM",
-                        "Count" => "COUNT",
-                        "Min"   => "MIN",
-                        "Max"   => "MAX",
-                        "Avg"   => "AVG",
-                        _       => "SUM"
-                    };
-                    return (Property: p, Func: func);
-                }))
-            .ToList();
+        var columns = GetAggregateColumns(typeof(T));
 
         if (columns.Count == 0)
             return new Dictionary<string, decimal>();
