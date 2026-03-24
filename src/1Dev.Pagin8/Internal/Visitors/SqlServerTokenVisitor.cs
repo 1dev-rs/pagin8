@@ -275,7 +275,6 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
             ComparisonOperator.Contains  => token.IsNegated ? "NOT LIKE" : "LIKE",
             ComparisonOperator.StartsWith => token.IsNegated ? "NOT LIKE" : "LIKE",
             ComparisonOperator.EndsWith  => token.IsNegated ? "NOT LIKE" : "LIKE",
-            // Equals on text: PostgreSQL uses ILIKE, SQL Server uses LIKE (collation-based CI)
             ComparisonOperator.Equals when isText => token.IsNegated ? "NOT LIKE" : "LIKE",
             // All other operators (=, >, <, >=, <=, IS, IN, BETWEEN) are the same across
             // database engines — the shared helper is safe for these.
@@ -567,7 +566,7 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
         // OPTIMIZATION: Use SQL Server's IN clause with LOWER() for case-insensitive comparison
         // This is more efficient than multiple OR conditions
         // LOWER(column) IN (@p0, @p1, @p2)
-        
+
         if (values.Count == 1)
         {
             var singleValue = values[0];

@@ -8,6 +8,7 @@ using _1Dev.Pagin8.Internal;
 using _1Dev.Pagin8.Internal.DateProcessor;
 using _1Dev.Pagin8.Internal.Tokenizer.Contracts;
 using _1Dev.Pagin8.Internal.Visitors;
+using Microsoft.Extensions.Logging;
 
 namespace _1Dev.Pagin8.Extensions.Backend
 {
@@ -71,7 +72,11 @@ namespace _1Dev.Pagin8.Extensions.Backend
             var dateProcessor       = _sp.GetRequiredService<IDateProcessor>();
 
             var sqlServerVisitor  = new SqlServerTokenVisitor(metadata, dateProcessor);
-            var sqlServerBuilder  = new SqlServerSqlQueryBuilder(tokenizationService, sqlServerVisitor);
+            var innerBuilder     = new SqlServerSqlQueryBuilder(tokenizationService, sqlServerVisitor);
+            var loggerFactory    = _sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>();
+            var sqlServerBuilder = new LoggingSqlServerSqlQueryBuilder(innerBuilder, loggerFactory);
+            var debugLogger = loggerFactory.CreateLogger("Pagin8");
+            debugLogger.LogWarning("[PAGIN8-DEBUG] BuildProvider '{Name}': LoggingSqlServerSqlQueryBuilder created, Trace enabled: {TraceEnabled}", name, debugLogger.IsEnabled(Microsoft.Extensions.Logging.LogLevel.Trace));
 
             // Read Command Timeout directly from the factory — no connection string parsing needed.
             // Set it via the commandTimeout parameter when registering with AddPagin8BackendSqlServer().

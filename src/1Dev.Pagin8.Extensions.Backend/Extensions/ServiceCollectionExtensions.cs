@@ -220,9 +220,11 @@ public static class ServiceCollectionExtensions
             var tokenizationService = sp.GetRequiredService<ITokenizationService>();
             var metadata = sp.GetRequiredService<IPagin8MetadataProvider>();
             var dateProcessor = sp.GetRequiredService<IDateProcessor>();
+            var loggerFactory = sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>();
 
             var sqlServerVisitor = new SqlServerTokenVisitor(metadata, dateProcessor);
-            return new SqlServerSqlQueryBuilder(tokenizationService, sqlServerVisitor);
+            var inner = new SqlServerSqlQueryBuilder(tokenizationService, sqlServerVisitor);
+            return new LoggingSqlServerSqlQueryBuilder(inner, loggerFactory);
         });
 
         // Register a factory to create SQL Server filter providers for a given named connection
