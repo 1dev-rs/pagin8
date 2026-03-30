@@ -101,10 +101,13 @@ public class FilterProvider : IFilterProvider
 
         if (buildResult.Builder is null)
         {
+            var countOnly = buildResult.Meta.ShowCount
+                ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout)
+                : 0;
             return new PagedResults<TResponse>
             {
                 Data = [],
-                TotalRows = 0,
+                TotalRows = countOnly,
                 Meta = buildResult.Meta
             };
         }
