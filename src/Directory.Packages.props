@@ -12,8 +12,6 @@
     <PackageVersion Include="Npgsql" Version="9.0.4" />
     <PackageVersion Include="Serilog" Version="4.3.1" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="9.0.2" />
-    <!-- Pin to net9-compatible version; without this an SDK with .NET 10 resolves 10.0.0.0 which breaks net9 deployments -->
-    <PackageVersion Include="System.Text.Json" Version="9.0.4" />
     <PackageVersion Include="Testcontainers" Version="3.10.0" />
     <PackageVersion Include="Testcontainers.MsSql" Version="3.10.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="3.10.0" />
