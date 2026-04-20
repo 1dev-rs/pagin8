@@ -39,7 +39,10 @@ public class IsTokenizationStrategy : ITokenizationStrategy
 
     public List<Token> Tokenize(string query, string jsonPath, int nestingLevel = 1)
     {
-        throw new NotImplementedException();
+        var tokens = Tokenize(query, nestingLevel);
+        foreach (var token in tokens)
+            token.JsonPath = jsonPath;
+        return tokens;
     }
 
     private static void ValidateValue(string value, out bool isEmptyQuery)

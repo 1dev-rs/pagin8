@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace _1Dev.Pagin8.Internal;
 
-internal sealed partial class LoggingSqlQueryBuilder(
+public partial class LoggingSqlQueryBuilder(
     ISqlQueryBuilder inner,
     ILoggerFactory loggerFactory) : ISqlQueryBuilder
 {
@@ -31,6 +31,13 @@ internal sealed partial class LoggingSqlQueryBuilder(
             sqlParams.Select((p, i) => $"@p{i} ({p.Argument?.GetType().Name ?? "null"}) = '{p.Argument}'"));
 
         LogQueryBuilt(entityName, queryString, sql.Sql, sqlParams.Count, formattedParams);
+
+        // Also log at Warning for SQL Server debugging (source-generated Trace may not emit in derived classes)
+        if (this is ISqlServerSqlQueryBuilder)
+        {
+            logger.LogWarning("Query built for {EntityName} [SQL Server] | Filter: \"{QueryString}\" | SQL: {Sql} | Params ({ParameterCount}): [{Parameters}]",
+                entityName, queryString, sql.Sql, sqlParams.Count, formattedParams);
+        }
 
         return result;
     }

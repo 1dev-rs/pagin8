@@ -11,13 +11,17 @@ using System.Collections.Generic;
 
 namespace _1Dev.Pagin8.Test.SqlQueryBuilderTests;
 
-public class SqlQueryBuilderTests
+[Collection("PostgreSQL QueryBuilder Tests")]
+public class PostgreSqlQueryBuilderTests
 {
     private readonly ISqlQueryBuilder _sut;
 
-    public SqlQueryBuilderTests()
+    public PostgreSqlQueryBuilderTests()
     {
-        Pagin8TestBootstrap.Init();
+        // Ensure PostgreSQL configuration for these tests
+        // This is needed because SQL Server integration tests may run first and set different configuration
+        PostgreSqlTestBootstrap.Init();
+        
         var tokenizer = new Tokenizer(); 
         var contextValidator = new PassThroughContextValidator(); 
         var metadataProvider = new Pagin8MetadataProvider(new MetadataProvider());
@@ -175,9 +179,14 @@ public class SqlQueryBuilderTests
         var sql = result.Builder.AsSql().Sql;
         var @params = result.Builder.Build().SqlParameters;
 
+        // The query "name.stw.in.(karate,)" parses as: IN operator with starts-with 'karate'
+        // PostgreSQL optimizes IN with text to use ILIKE ANY(ARRAY[...])
         sql.Should().Be(
-            "AND ((name ILIKE 'karate%')) ORDER BY id ASC LIMIT @p0"
+            "AND (name ILIKE ANY(ARRAY[@p0])) ORDER BY id ASC LIMIT @p1"
         );
+        
+        @params.Should().HaveCount(2);
+        @params[0].Argument.Should().Be("karate%"); // starts with pattern
     }
 
     [Theory]

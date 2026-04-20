@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using System.Text.Json;
@@ -13,6 +14,21 @@ public class MetadataProvider : IMetadataProvider
     private const string NoSortFlag = "no-sort";
     private const string ArrayFlag = "array";
     private const int MaxSerializationDepth = 1;
+
+    // Shared across all instances — entity types and their attributes never change at runtime.
+    private static readonly BindingFlags LookupFlags = BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance;
+    private static readonly ConcurrentDictionary<TypeNameKey, PropertyInfo?> PropertyCache = new();
+    private static readonly ConcurrentDictionary<Type, string> EntityKeyCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, bool> FilterableCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, bool> SortableCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, bool> InMetaCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, bool> NullAllowedCache = new();
+    private static readonly ConcurrentDictionary<TypeNameKey, TypeCode> TypeCodeCache = new();
+
+    private static PropertyInfo? GetCachedProperty(Type type, string propertyName)
+        => PropertyCache.GetOrAdd(
+            new TypeNameKey(type, propertyName),
+            static key => key.Type.GetProperty(key.Name, LookupFlags));
 
     public IEnumerable<ColumnMetadata> Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(Type entityType, int currentDepth = 0) where TNonFilterableAttribute : Attribute where TNonSortable : Attribute where TMetaExclude : Attribute
     {
@@ -51,14 +67,14 @@ public class MetadataProvider : IMetadataProvider
             flags.Add(ArrayFlag);
             if (arrayInnerType != typeof(string) && currentDepth < MaxSerializationDepth)
             {
-                var test = currentDepth + 1;
-                nestedProperties = Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(arrayInnerType, test).ToList();
+                var nextDepth = currentDepth + 1;
+                nestedProperties = Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(arrayInnerType, nextDepth).ToList();
             }
         }
         else if (propertyType.IsClass && propertyType != typeof(string) && currentDepth < MaxSerializationDepth)
         {
-            var test = currentDepth + 1;
-            nestedProperties = Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(propertyType, test).ToList();
+            var nextDepth = currentDepth + 1;
+            nestedProperties = Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(propertyType, nextDepth).ToList();
         }
 
         return new ColumnMetadata(columnName, typeStr, flags) { Properties = nestedProperties };
@@ -86,7 +102,7 @@ public class MetadataProvider : IMetadataProvider
 
     public ColumnInfo GetColumnInfo<TNameTransformAttribute>(Type entityType, string propertyName, bool useTranslit = true) where TNameTransformAttribute : Attribute
     {
-        var propertyInfo = entityType.GetProperty(propertyName, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+        var propertyInfo = GetCachedProperty(entityType, propertyName);
         if (propertyInfo == null) return null!;
 
         var hasTranslitAttribute = propertyInfo.GetCustomAttributes(typeof(TNameTransformAttribute), inherit: true).FirstOrDefault() is TNameTransformAttribute;
@@ -101,79 +117,71 @@ public class MetadataProvider : IMetadataProvider
     }
 
     public string GetEntityKey(Type entityType)
-    {
-        var properties = entityType.GetProperties();
+        => EntityKeyCache.GetOrAdd(entityType, static t =>
+        {
+            var properties = t.GetProperties();
 
-        var keyProperty = properties.SingleOrDefault(p =>
-            p.DeclaringType == entityType &&
-            p.GetCustomAttributes(typeof(KeyAttribute), inherit: false).Any());
+            var keyProperty = properties.SingleOrDefault(p =>
+                p.DeclaringType == t &&
+                p.GetCustomAttributes(typeof(KeyAttribute), inherit: false).Any());
 
-        if (keyProperty != null) return JsonNamingPolicy.CamelCase.ConvertName(keyProperty.Name);
+            if (keyProperty != null) return JsonNamingPolicy.CamelCase.ConvertName(keyProperty.Name);
 
-        keyProperty = properties.SingleOrDefault(p =>
-            p.DeclaringType != entityType &&
-            p.GetCustomAttributes(typeof(KeyAttribute), inherit: true).Any());
+            keyProperty = properties.SingleOrDefault(p =>
+                p.DeclaringType != t &&
+                p.GetCustomAttributes(typeof(KeyAttribute), inherit: true).Any());
 
-        if (keyProperty != null) return JsonNamingPolicy.CamelCase.ConvertName(keyProperty.Name);
+            if (keyProperty != null) return JsonNamingPolicy.CamelCase.ConvertName(keyProperty.Name);
 
-        throw new MissingEntityKeyException($"Entity type {entityType.Name} has no key property.");
-    }
+            throw new MissingEntityKeyException($"Entity type {t.Name} has no key property.");
+        });
 
     public TypeCode GetTypeCodeForProperty(Type entityType, string propertyName)
-    {
-        var property = entityType.GetProperty(propertyName, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
-        Guard.AgainstNull(property);
-
-        var propertyType = Nullable.GetUnderlyingType(property!.PropertyType) ?? property.PropertyType;
-        return Type.GetTypeCode(propertyType);
-    }
+        => TypeCodeCache.GetOrAdd(
+            new TypeNameKey(entityType, propertyName),
+            static key =>
+            {
+                var property = GetCachedProperty(key.Type, key.Name);
+                Guard.AgainstNull(property);
+                var propertyType = Nullable.GetUnderlyingType(property!.PropertyType) ?? property.PropertyType;
+                return Type.GetTypeCode(propertyType);
+            });
 
     public bool IsFieldFilterable(Type entityType, string propertyName)
-    {
-        var propertyInfo = entityType.GetProperty(propertyName, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
-        if (propertyInfo == null) return false;
-
-        var columnAttribute = propertyInfo.GetCustomAttribute<NonFilterableAttribute>();
-        return columnAttribute is null;
-    }
+        => FilterableCache.GetOrAdd(
+            new TypeNameKey(entityType, propertyName),
+            static key =>
+            {
+                var prop = GetCachedProperty(key.Type, key.Name);
+                return prop != null && prop.GetCustomAttribute<NonFilterableAttribute>() is null;
+            });
 
     public bool IsFieldSortable(Type entityType, string propertyName)
-    {
-        var propertyInfo = entityType.GetProperty(propertyName, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
-        if (propertyInfo == null) return false;
-
-        var columnAttribute = propertyInfo.GetCustomAttribute<NonSortableAttribute>();
-
-        return columnAttribute is null;
-    }
+        => SortableCache.GetOrAdd(
+            new TypeNameKey(entityType, propertyName),
+            static key =>
+            {
+                var prop = GetCachedProperty(key.Type, key.Name);
+                return prop != null && prop.GetCustomAttribute<NonSortableAttribute>() is null;
+            });
 
     public bool IsFieldInMeta(Type entityType, string propertyName)
-    {
-        var propertyInfo = entityType.GetProperty(propertyName, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
-        return propertyInfo != null;
-    }
+        => InMetaCache.GetOrAdd(
+            new TypeNameKey(entityType, propertyName),
+            static key => GetCachedProperty(key.Type, key.Name) != null);
 
     public bool IsNullAllowed(Type entityType, string propertyName)
-    {
-        var propertyInfo = entityType.GetProperty(propertyName, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
-        if (propertyInfo == null) return false;
-
-        var nullsAllowedAttribute = propertyInfo.GetCustomAttribute<NullsAllowedAttribute>();
-
-        return nullsAllowedAttribute is not null;
-    }
+        => NullAllowedCache.GetOrAdd(
+            new TypeNameKey(entityType, propertyName),
+            static key =>
+            {
+                var prop = GetCachedProperty(key.Type, key.Name);
+                return prop != null && prop.GetCustomAttribute<NullsAllowedAttribute>() is not null;
+            });
 
     private static bool IsNullAllowed(PropertyInfo propertyInfo)
-    {
-        var nullsAllowedAttribute = propertyInfo.GetCustomAttribute<NullsAllowedAttribute>();
-        if (nullsAllowedAttribute is not null)
-        {
-            return true;
-        }
-
-        var type = propertyInfo.PropertyType;
-        return Nullable.GetUnderlyingType(type) != null;
-    }
+        => propertyInfo.GetCustomAttribute<NullsAllowedAttribute>() is not null ||
+           Nullable.GetUnderlyingType(propertyInfo.PropertyType) != null;
 
     private static string UseTranslitColumn(MemberInfo propertyInfo)
     {
@@ -205,4 +213,22 @@ public class MetadataProvider : IMetadataProvider
         };
         return typeStr;
     }
+}
+
+/// <summary>
+/// Cache key combining a CLR type and a property name compared ordinal-ignore-case,
+/// avoiding per-call string allocations from ToLowerInvariant().
+/// </summary>
+internal readonly struct TypeNameKey(Type type, string name) : IEquatable<TypeNameKey>
+{
+    public Type Type { get; } = type;
+    public string Name { get; } = name;
+
+    public bool Equals(TypeNameKey other)
+        => Type == other.Type && string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase);
+
+    public override bool Equals(object? obj) => obj is TypeNameKey k && Equals(k);
+
+    public override int GetHashCode()
+        => HashCode.Combine(Type, string.GetHashCode(Name, StringComparison.OrdinalIgnoreCase));
 }

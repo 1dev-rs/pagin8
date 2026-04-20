@@ -31,9 +31,10 @@ public class Tokenizer : ITokenizer
         return TokenizeJsonQueryParts(nestingLevel, jsonPath, queryParts);
     }
 
-    public string RevertToQueryString(List<Token> tokens)
+    public string RevertToQueryString(IEnumerable<Token> tokens)
     {
-        var queryStrings = tokens.Select(x => x.RevertToQueryString());
+        var tokenList = tokens as List<Token> ?? tokens.ToList();
+        var queryStrings = tokenList.Select(x => x.RevertToQueryString());
         var queryString = string.Join('&', queryStrings);
         return queryString;
     }

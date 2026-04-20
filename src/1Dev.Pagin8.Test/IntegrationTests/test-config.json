@@ -1,0 +1,26 @@
+{
+  "$schema": "./test-config.schema.json",
+  "testConfiguration": {
+    "datasetSize": 5000,
+    "seed": 42,
+    "databases": {
+      "sqlServer": {
+        "enabled": true,
+        "image": "mcr.microsoft.com/mssql/server:2022-latest",
+        "password": "YourStrong@Passw0rd"
+      },
+      "postgreSql": {
+        "enabled": true,
+        "image": "postgres:16-alpine",
+        "database": "testdb",
+        "username": "postgres",
+        "password": "postgres"
+      }
+    },
+    
+    "docker": {
+      "cleanupOnExit": true,
+      "reuseContainers": false
+    }
+  }
+}

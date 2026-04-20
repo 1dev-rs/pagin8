@@ -1,9 +1,13 @@
-using System.Data;
-using Dapper;
-using InterpolatedSql.Dapper.SqlBuilders;
-using _1Dev.Pagin8.Input;
 using _1Dev.Pagin8.Extensions.Backend.Interfaces;
 using _1Dev.Pagin8.Extensions.Backend.Models;
+using _1Dev.Pagin8.Input;
+using Attributes;
+using Dapper;
+using InterpolatedSql.Dapper;
+using System.Collections.Concurrent;
+using System.Data;
+using System.Reflection;
+using System.Text.Json;
 
 namespace _1Dev.Pagin8.Extensions.Backend.Implementations;
 
@@ -14,25 +18,68 @@ public class FilterProvider : IFilterProvider
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ISqlQueryBuilder _sqlQueryBuilder;
+    private readonly int? _defaultCommandTimeout;
+
+    private static readonly ConcurrentDictionary<Type, IReadOnlyList<(PropertyInfo Property, string Func)>> AggregateColumnsCache = new();
+
+    private static IReadOnlyList<(PropertyInfo Property, string Func)> GetAggregateColumns(Type type)
+        => AggregateColumnsCache.GetOrAdd(type, static t =>
+            t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
+                .SelectMany(p => p.GetCustomAttributes()
+                    .Where(a => a.GetType().Name == nameof(AggregateAttribute))
+                    .Select(attr =>
+                    {
+                        // Prefer strongly-typed path for Attributes.AggregateAttribute.
+                        // Fall back to reflection for any same-named attribute from another namespace.
+                        var func = attr is AggregateAttribute typed
+                            ? typed.AggregateType switch
+                            {
+                                AggregateType.Sum   => "SUM",
+                                AggregateType.Count => "COUNT",
+                                AggregateType.Min   => "MIN",
+                                AggregateType.Max   => "MAX",
+                                AggregateType.Avg   => "AVG",
+                                _                   => "SUM"
+                            }
+                            : (attr.GetType().GetProperty("AggregateType")?.GetValue(attr)?.ToString() ?? "Sum") switch
+                            {
+                                "Sum"   => "SUM",
+                                "Count" => "COUNT",
+                                "Min"   => "MIN",
+                                "Max"   => "MAX",
+                                "Avg"   => "AVG",
+                                _       => "SUM"
+                            };
+                        return (Property: p, Func: func);
+                    }))
+                .ToList());
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FilterProvider"/> class.
     /// </summary>
     /// <param name="connectionFactory">The database connection factory.</param>
     /// <param name="sqlQueryBuilder">The Pagin8 SQL query builder.</param>
-    /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
-    public FilterProvider(IDbConnectionFactory connectionFactory, ISqlQueryBuilder sqlQueryBuilder)
+    /// <param name="defaultCommandTimeout">Optional default SQL command timeout in seconds applied to every query. Null uses the Dapper default (30 s).</param>
+    /// <exception cref="ArgumentNullException">Thrown when any required parameter is null.</exception>
+    public FilterProvider(IDbConnectionFactory connectionFactory, ISqlQueryBuilder sqlQueryBuilder, int? defaultCommandTimeout = null)
     {
         _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         _sqlQueryBuilder = sqlQueryBuilder ?? throw new ArgumentNullException(nameof(sqlQueryBuilder));
+        _defaultCommandTimeout = defaultCommandTimeout;
     }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     /// <summary>
     /// Executes a filtered query and returns paged results.
     /// </summary>
-    public async Task<PagedResults<TResponse>> GetAsync<TResponse>(string viewName, FilteredDataQuery query)
+    public async Task<PagedResults<TResponse>> GetAsync<TResponse>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
         where TResponse : class
     {
+        var timeout = commandTimeout ?? _defaultCommandTimeout;
         using var connection = _connectionFactory.Create();
 
         var inputParams = QueryInputParameters.Create(
@@ -40,8 +87,8 @@ public class FilterProvider : IFilterProvider
             queryString: query.QueryString,
             defaultQueryString: query.DefaultQuery,
             ignoreLimit: query.IgnoreLimit,
-            isJson: false,
-            isCount: false
+            isJson: query.IsJson,
+            ignorePaging: false
         );
 
         var qbParams = QueryBuilderParameters.Create(
@@ -55,7 +102,7 @@ public class FilterProvider : IFilterProvider
         if (buildResult.Builder is null)
         {
             int? countOnly = buildResult.Meta.ShowCount
-                ? await GetCountInternalAsync<TResponse>(connection, viewName, query)
+                ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout)
                 : null;
             return new PagedResults<TResponse>
             {
@@ -65,10 +112,9 @@ public class FilterProvider : IFilterProvider
             };
         }
 
-        var data = await ExecuteQueryAsync<TResponse>(connection, buildResult.Builder);
-
+        var data = await FetchDataAsync<TResponse>(buildResult.Builder, query, timeout);
         int? count = buildResult.Meta.ShowCount
-            ? await GetCountInternalAsync<TResponse>(connection, viewName, query)
+            ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout)
             : null;
 
         return new PagedResults<TResponse>
@@ -79,20 +125,38 @@ public class FilterProvider : IFilterProvider
         };
     }
 
+    private async Task<IEnumerable<TResponse>> FetchDataAsync<TResponse>(
+        InterpolatedSql.Dapper.SqlBuilders.QueryBuilder builder,
+        FilteredDataQuery query,
+        int? timeout) where TResponse : class
+    {
+        if (query.IsJson)
+        {
+            var json = await builder.QueryFirstOrDefaultAsync<string>(commandTimeout: timeout);
+            return string.IsNullOrEmpty(json) || json == "[]"
+                ? []
+                : JsonSerializer.Deserialize<IEnumerable<TResponse>>(json, JsonOptions) ?? [];
+        }
+
+        return await builder.QueryAsync<TResponse>(commandTimeout: timeout);
+    }
+
     /// <summary>
     /// Gets the count of rows matching the filter.
     /// </summary>
-    public async Task<int> GetCountAsync<TResponse>(string viewName, FilteredDataQuery query)
+    public async Task<int> GetCountAsync<TResponse>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
         where TResponse : class
     {
+        var timeout = commandTimeout ?? _defaultCommandTimeout;
         using var connection = _connectionFactory.Create();
-        return await GetCountInternalAsync<TResponse>(connection, viewName, query);
+        return await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout);
     }
 
     private async Task<int> GetCountInternalAsync<TResponse>(
         IDbConnection connection,
         string viewName,
-        FilteredDataQuery query) where TResponse : class
+        FilteredDataQuery query,
+        int? commandTimeout = null) where TResponse : class
     {
         var inputParams = QueryInputParameters.Create(
             sql: viewName,
@@ -100,7 +164,7 @@ public class FilterProvider : IFilterProvider
             defaultQueryString: query.DefaultQuery,
             ignoreLimit: true,
             isJson: false,
-            isCount: true
+            ignorePaging: true
         );
 
         var qbParams = QueryBuilderParameters.Create(
@@ -114,18 +178,64 @@ public class FilterProvider : IFilterProvider
         if (buildResult.Builder is null)
             return 0;
 
-        var builtSql = buildResult.Builder.Build();
-        return await connection.ExecuteScalarAsync<int>(
-            builtSql.Sql,
-            builtSql.SqlParameters);
+        return await buildResult.Builder.ExecuteScalarAsync<int>(commandTimeout: commandTimeout);
     }
 
-    private static async Task<IEnumerable<TResponse>> ExecuteQueryAsync<TResponse>(
-        IDbConnection connection,
-        QueryBuilder builder)
+    /// <summary>
+    /// Gets aggregate values for properties decorated with <see cref="AggregateAttribute"/>.
+    /// </summary>
+    /// <remarks>
+    /// The concrete <see cref="AggregateAttribute"/> type (namespace <c>Attributes</c>) is
+    /// recognized via a strongly-typed path. Any other attribute whose simple type name is also
+    /// <c>AggregateAttribute</c> and that exposes an <c>AggregateType</c> property is supported
+    /// via a reflection fallback, preserving backward compatibility with convention-based usage.
+    /// </remarks>
+    public async Task<IDictionary<string, decimal>> GetAggregatesAsync<T>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
+        where T : class
     {
-        var builtSql = builder.Build();
-        return await connection.QueryAsync<TResponse>(builtSql.Sql, builtSql.SqlParameters);
+        var columns = GetAggregateColumns(typeof(T));
+
+        if (columns.Count == 0)
+            return new Dictionary<string, decimal>();
+
+        var selectParts = columns.Select(x =>
+        {
+            var camelName = JsonNamingPolicy.CamelCase.ConvertName(x.Property.Name);
+            var alias = $"{camelName}{x.Func[0]}{x.Func[1..].ToLower()}";
+            return $"COALESCE({x.Func}({x.Property.Name}), 0) AS \"{alias}\"";
+        });
+
+        var selectClause = string.Join(", ", selectParts);
+        var timeout = commandTimeout ?? _defaultCommandTimeout;
+
+        using var connection = _connectionFactory.Create();
+
+        var inputParams = QueryInputParameters.Create(
+            sql: viewName,
+            queryString: query.QueryString,
+            defaultQueryString: query.DefaultQuery,
+            ignoreLimit: true,
+            isJson: false,
+            ignorePaging: true
+        );
+
+        var qbParams = QueryBuilderParameters.Create(
+            connection: connection,
+            baseQuery: GetBaseAggregateQuery(viewName, selectClause),
+            inputParameters: inputParams
+        );
+
+        var buildResult = _sqlQueryBuilder.BuildSqlQuery<T>(qbParams);
+
+        if (buildResult.Builder is null)
+            return new Dictionary<string, decimal>();
+
+        var rows = await buildResult.Builder.QueryAsync<dynamic>(commandTimeout: timeout);
+        var row = rows.FirstOrDefault();
+        if (row is null) return new Dictionary<string, decimal>();
+
+        return ((IDictionary<string, object>)row)
+            .ToDictionary(kvp => kvp.Key, kvp => Convert.ToDecimal(kvp.Value ?? 0));
     }
 
     private static FormattableString GetBaseQuery(string viewName)
@@ -133,4 +243,7 @@ public class FilterProvider : IFilterProvider
 
     private static FormattableString GetBaseCountQuery(string viewName)
         => $"SELECT COUNT(*) FROM {viewName:raw} WHERE 1=1 /**filters**/";
+
+    private static FormattableString GetBaseAggregateQuery(string viewName, string selectClause)
+        => $"SELECT {selectClause:raw} FROM {viewName:raw} WHERE 1=1 /**filters**/";
 }

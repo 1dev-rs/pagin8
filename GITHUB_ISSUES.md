@@ -4,6 +4,8 @@
 
 ### Issue #5: IsToken Negation Logic Bug - Incorrect Empty/Non-Empty Filtering
 
+**Status:** ✅ RESOLVED — `AppendEmptyQueryConditions` refactored with explicit conditional branches in both `NpgsqlTokenVisitor` and `SqlServerTokenVisitor`.
+
 **Labels:** `bug`, `priority:high`, `phase-2`
 
 **Description:**
@@ -42,6 +44,8 @@ Refactor `AppendEmptyQueryConditions` to use explicit conditional logic for text
 ---
 
 ### Issue #6: Date Range Validation - Missing Sanity Check (start <= end)
+
+**Status:** ✅ RESOLVED — `DateProcessor.GetStartAndEndOfRelativeDate` now passes the result through `ValidateDateRange()` which throws `Pagin8Exception(Pagin8_InvalidDateRange)` when `start > end`.
 
 **Labels:** `enhancement`, `priority:high`, `phase-2`
 
@@ -88,6 +92,8 @@ public static Pagin8StatusCode Pagin8_InvalidDateRange = new()
 
 ### Issue #7: CultureInfo Inconsistency in Type Conversion (Double/Float)
 
+**Status:** ✅ RESOLVED — `double.TryParse` updated to use `NumberStyles.Float, CultureInfo.InvariantCulture` in `NpgsqlTokenVisitor`, `SqlServerTokenVisitor`, and `LinqTokenVisitor`.
+
 **Labels:** `bug`, `priority:high`, `phase-2`
 
 **Description:**
@@ -130,6 +136,8 @@ TypeCode.Single => float.TryParse(value, NumberStyles.Float, CultureInfo.Invaria
 ---
 
 ### Issue #8: SQL Injection Risk - FormattableString Field Name Replacement
+
+**Status:** ✅ RESOLVED — `ValidateJsonFieldName()` added as a private static method in both `NpgsqlTokenVisitor` and `SqlServerTokenVisitor`, called at the start of `HandleJsonArrayFilter` before `token.Field` is embedded in any SQL string. Validates that the field name starts with a letter or underscore and contains only alphanumeric characters, underscores, or dots. Throws `Pagin8Exception(Pagin8_TokenFieldInvalid)` on violation.
 
 **Labels:** `security`, `priority:high`, `phase-2`
 
@@ -186,6 +194,8 @@ private FormattableString BuildJsonArrayQuery(string field, FormattableString in
 ---
 
 ### Issue #9: Performance - Cache Reflection Method Lookups (50% improvement)
+
+**Status:** ✅ RESOLVED — Added `private static readonly ConcurrentDictionary<(Type TokenType, Type EntityType), MethodInfo> _methodCache` to both `NpgsqlTokenVisitor` and `SqlServerTokenVisitor`. `DynamicVisit` now uses `_methodCache.GetOrAdd(...)` so `GetMethod` + `MakeGenericMethod` are called only once per unique `(tokenType, entityType)` pair. Added `using System.Collections.Concurrent` to both visitors.
 
 **Labels:** `performance`, `priority:high`, `phase-2`, `optional`
 
@@ -246,6 +256,8 @@ Expected ~50% performance improvement for nested filters.
 
 ### Issue #12: Null Semantics - Incorrect Sort Coalescing for Nullable Columns
 
+**Status:** ✅ RESOLVED — Keyset pagination `IsNullAllowed` branch in `NpgsqlTokenVisitor` and `SqlServerTokenVisitor` now handles null cursor value explicitly (`IS NULL`) and for non-null values uses an explicit null-aware compound expression instead of `COALESCE(null, fallback)`.
+
 **Labels:** `bug`, `priority:medium`, `phase-3`
 
 **Description:**
@@ -294,6 +306,8 @@ if (columnInfo.IsNullAllowed)
 ---
 
 ### Issue #13: Security - Regex Pattern Injection (ReDoS Risk)
+
+**Status:** ✅ RESOLVED — Added `Esc()`/`EscJoin()` helpers in `TokenHelper` that wrap `Regex.Escape()`. All 14 pattern properties now escape config values before interpolating them. Added `ValidateConfiguration()` startup check for empty/null config values.
 
 **Labels:** `security`, `priority:medium`, `phase-3`
 
@@ -345,6 +359,8 @@ public static void ValidateConfiguration()
 
 ### Issue #14: Validation - Empty IN Operator Values Not Rejected
 
+**Status:** ✅ RESOLVED — `InTokenizationStrategy` now validates non-empty value list and rejects blank entries, throwing `Pagin8Exception(Pagin8_InvalidIn)`.
+
 **Labels:** `enhancement`, `priority:medium`, `phase-3`
 
 **Description:**
@@ -392,6 +408,8 @@ if (values.Any(string.IsNullOrWhiteSpace))
 ---
 
 ### Issue #15: Performance - Unnecessary List Materialization in Standardize()
+
+**Status:** ✅ RESOLVED — Removed `.ToList()` from `TokenizationService.Standardize()`; smart materialization (`tokens as List<Token> ?? tokens.ToList()`) moved into `Tokenizer.RevertToQueryString()`.
 
 **Labels:** `performance`, `priority:medium`, `phase-3`
 
@@ -441,6 +459,8 @@ public string RevertToQueryString(IEnumerable<Token> tokens)
 ## Phase 4: LOW PRIORITY (Backlog)
 
 ### Issue #10: Feature Parity - LINQ Visitor Nested Filtering Not Implemented
+
+**Status:** ✅ RESOLVED — `LinqTokenVisitor<T>.Visit(NestedFilterToken, IQueryable<T>)` implemented. For regular nested objects, builds an expression tree accessing `x.ParentField.ChildField`. For collection properties (`IEnumerable<>`), generates `x.ParentField.Any(elem => ...)`. Handles `ComparisonToken`, `IsToken`, and `InToken` children via static helpers (`BuildNestedComparisonExpr`, `BuildNestedIsExpr`, `BuildNestedInExpr`). 7 unit tests added in `LinqNestedFilterAndJsonPathInTests`.
 
 **Labels:** `enhancement`, `priority:low`, `phase-4`, `hard`
 
@@ -493,6 +513,8 @@ This is a significant undertaking. Prioritize based on actual LINQ visitor usage
 ---
 
 ### Issue #11: Feature Gap - JSON Path IN Support Not Implemented
+
+**Status:** ✅ RESOLVED — `InTokenizationStrategy.Tokenize(string query, string jsonPath, int nestingLevel)` implemented by delegating to the regular overload and setting `token.JsonPath = jsonPath` on each returned token. Also fixed `IsTokenizationStrategy` the same way (same `NotImplementedException`). The SQL visitors (`NpgsqlTokenVisitor`, `SqlServerTokenVisitor`) already handled `InToken.JsonPath` via `DetermineProcessingType` — so no visitor changes were needed. Tests added in `LinqNestedFilterAndJsonPathInTests`.
 
 **Labels:** `enhancement`, `priority:low`, `phase-4`, `hard`
 
@@ -554,6 +576,8 @@ Then update `NpgsqlTokenVisitor.Visit<T>(InToken token, ...)` to handle JSON pat
 
 ### Issue #16: UX - Guard.AgainstNull Missing Parameter Name for Better Debugging
 
+**Status:** ✅ RESOLVED — `Guard.AgainstNull` updated with `[CallerArgumentExpression(nameof(value))]` for automatic parameter name capture.
+
 **Labels:** `enhancement`, `priority:low`, `phase-4`
 
 **Description:**
@@ -597,6 +621,8 @@ Guard.AgainstNull(myParameter);
 ---
 
 ### Issue #17: Validation - No Limit Value Range Check (negative/zero limits)
+
+**Status:** ✅ RESOLVED — Both `NpgsqlTokenVisitor` and `SqlServerTokenVisitor` now throw `Pagin8Exception(Pagin8_InvalidLimit)` when `token.Value <= 0`.
 
 **Labels:** `enhancement`, `priority:low`, `phase-4`
 
@@ -657,7 +683,25 @@ public static Pagin8StatusCode Pagin8_InvalidLimit = new()
 
 ## Summary
 
-**Total Issues:** 12
+**Total Issues:** 12 (12 resolved, 0 open)
+
+### Resolved
+- ✅ #5 — IsToken negation logic bug
+- ✅ #6 — Date range start > end not validated
+- ✅ #7 — CultureInfo inconsistency in Double/Float parsing
+- ✅ #8 — SQL injection risk via FormattableString field name replacement
+- ✅ #9 — Cache reflection method lookups (performance)
+- ✅ #10 — LINQ visitor nested filtering not implemented
+- ✅ #11 — JSON path IN support not implemented
+- ✅ #12 — Null semantics in nullable column sort coalescing
+- ✅ #13 — ReDoS risk in regex patterns (Regex.Escape + startup validation)
+- ✅ #14 — Empty IN operator values not rejected
+- ✅ #15 — Unnecessary `ToList()` in `Standardize()`
+- ✅ #16 — `Guard.AgainstNull` missing parameter name
+- ✅ #17 — No limit value range check
+
+### Open
+_All issues resolved — ready for new release._
 
 ### By Phase
 - **Phase 2 (High Priority):** 5 issues (~10 hours)

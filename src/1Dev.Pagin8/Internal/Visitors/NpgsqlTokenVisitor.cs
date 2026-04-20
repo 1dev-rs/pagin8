@@ -13,6 +13,7 @@ using AspNet.Transliterator;
 using InterpolatedSql.SqlBuilders;
 using Pagin8.Internal.Configuration;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -232,6 +233,12 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     public QueryBuilderResult Visit<T>(LimitToken token, QueryBuilderResult result) where T : class
     {
+        if (token.Value <= 0)
+            throw new Pagin8Exception(
+                Pagin8StatusCode.Pagin8_InvalidLimit.Code,
+                $"Limit value must be a positive integer, but was {token.Value}"
+            );
+
         result.Builder += $"LIMIT {token.Value}";
         return result;
     }
@@ -288,8 +295,16 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
                     if (columnInfo.IsNullAllowed)
                     {
-                        var coalesce = GetCoalesceMinValue(typeCode);
-                        builder += $" COALESCE({formattedName:raw}, {coalesce}) {@operator:raw} COALESCE({formattedValue}, {coalesce})";
+                        if (formattedValue is null)
+                        {
+                            // Cursor value is null with non-equality operator: only NULL rows qualify
+                            builder += $" {formattedName:raw} IS NULL";
+                        }
+                        else
+                        {
+                            var coalesce = GetCoalesceMinValue(typeCode);
+                            builder += $" (({formattedName:raw} IS NULL AND {coalesce} {@operator:raw} {formattedValue}) OR ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {formattedValue}))";
+                        }
                     }
                     else
                     {
@@ -350,16 +365,32 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var typeCode = GetTypeCodeForProperty(innerType, token.Field);
         var isText = IsText(typeCode);
 
-        FormattableString query = $"{leftHandSide:raw} IS {negation:raw} NULL";
-        result.Builder += query;
+        if (!isText)
+        {
+            // Non-text: only check NULL
+            FormattableString query = $"{leftHandSide:raw} IS {negation:raw} NULL";
+            result.Builder += query;
+            return;
+        }
 
-        if (!isText) return;
-
-        var join = token.IsNegated ? " AND " : " OR ";
-        result.Builder += $"{join:raw}";
-
-        query = $"{leftHandSide:raw} {(token.IsNegated ? "<>" : "="):raw} ''";
-        result.Builder += query;
+        if (token.IsNegated)
+        {
+            // not.is.$empty → field IS NOT NULL AND field <> ''
+            FormattableString query = $"{leftHandSide:raw} IS NOT NULL";
+            result.Builder += query;
+            result.Builder += $" AND ";
+            query = $"{leftHandSide:raw} <> ''";
+            result.Builder += query;
+        }
+        else
+        {
+            // is.$empty → field IS NULL OR field = ''
+            FormattableString query = $"{leftHandSide:raw} IS NULL";
+            result.Builder += query;
+            result.Builder += $" OR ";
+            query = $"{leftHandSide:raw} = ''";
+            result.Builder += query;
+        }
     }
 
     private static void AppendValueQueryCondition(QueryBuilderResult result, IsToken token, string leftHandSide, string negation)
@@ -380,6 +411,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         }
 
         result.Builder += $"EXISTS (";
+        ValidateJsonFieldName(token.Field);
         var formattedArrayQuery = FormattableStringFactory.Create(BaseJsonArrayQuery.ToString().Replace("/**field**/", token.Field));
         var innerBuilder = new QueryBuilder(result.Builder.DbConnection, formattedArrayQuery);
         var innerResult = new QueryBuilderResult { Builder = innerBuilder };
@@ -463,11 +495,15 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     private static FormattableString GenerateInQuery(string column, bool isText, InToken token, DbComparison comparison)
     {
         var @operator = token.GetSqlOperator(isText); 
-        var comparisonOperator = SqlOperatorProcessor.GetSqlOperator(token.Comparison, isText, token.IsNegated);
+        // For the ANY operator optimization, get the base operator WITHOUT negation applied
+        // Negation is handled by wrapping with NOT(...) at the end
+        var comparisonOperator = SqlOperatorProcessor.GetSqlOperator(token.Comparison, isText, isNegated: false);
 
+        // For non-text types, use standard IN operator (already efficient)
         if (!isText)
             return $"{column:raw} {@operator:raw} ({comparison.Value:raw})";
 
+        // Handle special case operators that have custom format strings
         if (token.Comparison is ComparisonOperator.Equals or ComparisonOperator.In && @operator.Contains("{0}"))
         {
             string formatted;
@@ -482,25 +518,63 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             }
 
             formatted = string.Format(@operator, comparison.Value);
-
             return FormattableStringFactory.Create($"{column} {formatted}");
         }
 
-
+        // Extract individual values from the pre-formatted comparison.Value
         var raw = (string)comparison.Value;
-
         var values = raw
             .Trim('(', ')')
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(v => v.Trim('\'', ' '))
             .ToList();
 
-        var conditions = values
-            .Select(v => $"{column} {comparisonOperator} '{v}'");
+        if (values.Count == 0)
+        {
+            return token.IsNegated ? (FormattableString)$"TRUE" : (FormattableString)$"FALSE";
+        }
 
-        var combined = string.Join(" OR ", conditions);
+        // OPTIMIZATION: Use PostgreSQL's ANY operator with array for better performance
+        // Instead of: (col ILIKE val1 OR col ILIKE val2 OR col ILIKE val3)
+        // Use: col ILIKE ANY(ARRAY[val1, val2, val3])
+        
+        // Determine the operator for ANY clause
+        var anyOperator = comparisonOperator.ToUpper() switch
+        {
+            "ILIKE" => "ILIKE",
+            "LIKE" => "LIKE", 
+            "=" => "=",
+            "<>" => "<>",
+            _ => comparisonOperator
+        };
 
-        return FormattableStringFactory.Create($"({combined})");
+        // Build ARRAY[val1, val2, val3] with proper parameterization
+        FormattableString arrayElements;
+        if (values.Count == 1)
+        {
+            arrayElements = $"{values[0]}";
+        }
+        else
+        {
+            arrayElements = $"{values[0]}";
+            for (var i = 1; i < values.Count; i++)
+            {
+                arrayElements = $"{arrayElements}, {values[i]}";
+            }
+        }
+
+        // Construct the final query using ANY
+        if (token.IsNegated)
+        {
+            // For negation: NOT (column ILIKE ANY(ARRAY[...]))
+            // Or equivalently: column NOT ILIKE ALL(ARRAY[...])
+            return $"NOT ({column:raw} {anyOperator:raw} ANY(ARRAY[{arrayElements}]))";
+        }
+        else
+        {
+            // Standard: column ILIKE ANY(ARRAY[...])
+            return $"{column:raw} {anyOperator:raw} ANY(ARRAY[{arrayElements}])";
+        }
     }
 
 
@@ -612,7 +686,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             TypeCode.Int16 => short.TryParse(value, out var shortValue) ? shortValue : throw new ArgumentException($"Cannot format value {value} as Int16"),
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? intValue : throw new ArgumentException($"Cannot format value {value} as Int32"),
             TypeCode.Int64 => long.TryParse(value, out var longValue) ? longValue : throw new ArgumentException($"Cannot format value {value} as Int64"),
-            TypeCode.Double => double.TryParse(value, out var doubleValue) ? doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
+            TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
             TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
             TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToLowerBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
             TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
@@ -662,7 +736,7 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
             TypeCode.Int16 => short.TryParse(value, out var shortValue) ? (short?)shortValue : throw new ArgumentException($"Cannot format value {value} as Int16"),
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? (int?)intValue : throw new ArgumentException($"Cannot format value {value} as Int32"),
             TypeCode.Int64 => long.TryParse(value, out var longValue) ? (long?)longValue : throw new ArgumentException($"Cannot format value {value} as Int64"),
-            TypeCode.Double => double.TryParse(value, out var doubleValue) ? (double?)doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
+            TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? (double?)doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
             TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (bool?)boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
             TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
             TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? (decimal?)decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
@@ -900,15 +974,38 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
         throw new ArgumentException("Unsupported array type.");
     }
 
+    private static readonly ConcurrentDictionary<(Type TokenType, Type EntityType), MethodInfo> _methodCache = new();
+
     private void DynamicVisit(Token token, QueryBuilderResult result, Type type)
     {
-        var method = GetType().GetMethod("Visit", BindingFlags.Public | BindingFlags.Instance, null, [token.GetType(), typeof(QueryBuilderResult)], null) ?? throw new InvalidOperationException("Visit method not found.");
-        var genericMethod = method.MakeGenericMethod(type);
+        var key = (token.GetType(), type);
+        var genericMethod = _methodCache.GetOrAdd(key, k =>
+        {
+            var method = GetType().GetMethod("Visit", BindingFlags.Public | BindingFlags.Instance, null,
+                [k.TokenType, typeof(QueryBuilderResult)], null)
+                ?? throw new InvalidOperationException($"Visit method not found for {k.TokenType.Name}.");
+            return method.MakeGenericMethod(k.EntityType);
+        });
 
         var invokeResult = genericMethod.Invoke(this, [token, result]);
         if (invokeResult is not QueryBuilderResult)
         {
             throw new InvalidOperationException("The invoked Visit method returned null or an unexpected type.");
+        }
+    }
+
+    private static void ValidateJsonFieldName(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_TokenFieldInvalid.Code, "JSON field name cannot be empty.");
+
+        if (!char.IsLetter(fieldName[0]) && fieldName[0] != '_')
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_TokenFieldInvalid.Code, $"Invalid JSON field name: '{fieldName}'.");
+
+        foreach (var c in fieldName)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '_' && c != '.')
+                throw new Pagin8Exception(Pagin8StatusCode.Pagin8_TokenFieldInvalid.Code, $"Invalid JSON field name: '{fieldName}'.");
         }
     }
 

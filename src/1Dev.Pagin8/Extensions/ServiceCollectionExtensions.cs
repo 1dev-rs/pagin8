@@ -53,6 +53,17 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    public static IServiceCollection AddPagin8Sql(this IServiceCollection services, Action<ServiceConfiguration>? userConfig = null)
+    {
+        services.AddPagin8(cfg =>
+        {
+            userConfig?.Invoke(cfg);
+            cfg.DatabaseType = DatabaseType.SqlServer;
+        });
+
+        return services;
+    }
+
     private static void ValidateConfig(ServiceConfiguration config)
     {
         if (config.MaxNestingLevel < 0)
@@ -68,7 +79,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ITokenizationService, TokenizationService>();
         services.AddTransient(typeof(ILinqTokenVisitor<>), typeof(LinqTokenVisitor<>));
         services.AddTransient<IContextValidator, TokenContextValidator>();
-        services.AddTransient<IMetadataProvider, MetadataProvider>();
+        services.AddSingleton<IMetadataProvider, MetadataProvider>();
         services.AddTransient<IPagin8MetadataProvider, Pagin8MetadataProvider>();
         services.AddTransient<SqlQueryBuilder>();
         services.AddTransient<ISqlQueryBuilder>(sp =>
@@ -86,6 +97,9 @@ public static class ServiceCollectionExtensions
         {
             case DatabaseType.PostgreSql:
                 services.AddTransient<ISqlTokenVisitor, NpgsqlTokenVisitor>();
+                break;
+            case DatabaseType.SqlServer:
+                services.AddTransient<ISqlTokenVisitor, SqlServerTokenVisitor>();
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(dbType), dbType, null);

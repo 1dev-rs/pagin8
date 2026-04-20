@@ -53,7 +53,7 @@ public class TokenizationService(
 
     public string Standardize(IEnumerable<Token> tokens)
     {
-        var orderedTokens = EnsureOrderByPriority(tokens).ToList();
+        var orderedTokens = EnsureOrderByPriority(tokens);
         return tokenizer.RevertToQueryString(orderedTokens);
     }
 
@@ -144,7 +144,7 @@ public class TokenizationService(
 
     private static void IdentifyExceptions(List<Token> tokens, QueryInputParameters input, out bool isCountOnly)
     {
-         isCountOnly = IsCountOnly(tokens, input.IsCount);
+         isCountOnly = IsCountOnly(tokens, input.IgnorePaging);
     }
 
     private static bool IsCountOnly(List<Token> tokens, bool isCount)
