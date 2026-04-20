@@ -16,8 +16,9 @@ public record PagedResults<T>
 
     /// <summary>
     /// Total number of rows matching the filter (requires count.true in query).
+    /// Null when count was not requested.
     /// </summary>
-    public int TotalRows { get; init; }
+    public int? TotalRows { get; init; }
 
     /// <summary>
     /// Internal Pagin8 metadata. Not serialized to JSON.

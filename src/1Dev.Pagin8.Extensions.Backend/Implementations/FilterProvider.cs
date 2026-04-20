@@ -54,19 +54,22 @@ public class FilterProvider : IFilterProvider
 
         if (buildResult.Builder is null)
         {
+            int? countOnly = buildResult.Meta.ShowCount
+                ? await GetCountInternalAsync<TResponse>(connection, viewName, query)
+                : null;
             return new PagedResults<TResponse>
             {
                 Data = [],
-                TotalRows = 0,
+                TotalRows = countOnly,
                 Meta = buildResult.Meta
             };
         }
 
         var data = await ExecuteQueryAsync<TResponse>(connection, buildResult.Builder);
 
-        var count = buildResult.Meta.ShowCount
+        int? count = buildResult.Meta.ShowCount
             ? await GetCountInternalAsync<TResponse>(connection, viewName, query)
-            : 0;
+            : null;
 
         return new PagedResults<TResponse>
         {
