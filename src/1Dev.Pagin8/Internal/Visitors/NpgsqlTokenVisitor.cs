@@ -249,9 +249,12 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     private static FormattableString BuildQuery(string column, TypeCode typeCode, ComparisonToken token, bool isText, DbComparison comparison)
     {
-        return typeCode == TypeCode.DateTime
-            ? $"DATE({column:raw}) {token.GetSqlOperator(isText):raw} DATE({comparison.Value})"
-            : (FormattableString)$"{column:raw} {token.GetSqlOperator(isText):raw} {comparison.Value} {TryEscapeSpecialChars(token.Operator):raw}";
+        if (typeCode == TypeCode.DateTime)
+            return $"DATE({column:raw}) {token.GetSqlOperator(isText):raw} DATE({comparison.Value})";
+
+        var effectiveColumn = SqlOperatorConstants.ShouldLowerTextColumn(token.Operator, isText) ? $"lower({column})" : column;
+
+        return (FormattableString)$"{effectiveColumn:raw} {token.GetSqlOperator(isText):raw} {comparison.Value} {TryEscapeSpecialChars(token.Operator):raw}";
     }
 
     private void BuildSortConditions<T>(QueryBuilder builder, IReadOnlyList<SortExpression> sortExpressions) where T : class
@@ -494,7 +497,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     private static FormattableString GenerateInQuery(string column, bool isText, InToken token, DbComparison comparison)
     {
-        var @operator = token.GetSqlOperator(isText); 
+        var @operator = token.GetSqlOperator(isText);
         // For the ANY operator optimization, get the base operator WITHOUT negation applied
         // Negation is handled by wrapping with NOT(...) at the end
         var comparisonOperator = SqlOperatorProcessor.GetSqlOperator(token.Comparison, isText, isNegated: false);
@@ -502,6 +505,12 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         // For non-text types, use standard IN operator (already efficient)
         if (!isText)
             return $"{column:raw} {@operator:raw} ({comparison.Value:raw})";
+
+        // Mirrors BuildQuery: once CaseSensitiveComparisonSqlMap swaps Equals/In from ILIKE to
+        // "=" under the index-friendly flag, the column side must be lower()-wrapped too or the
+        // comparison silently stops matching (values are already lower-cased upstream).
+        if (SqlOperatorConstants.ShouldLowerTextColumn(token.Comparison, isText))
+            column = $"lower({column})";
 
         // Handle special case operators that have custom format strings
         if (token.Comparison is ComparisonOperator.Equals or ComparisonOperator.In && @operator.Contains("{0}"))

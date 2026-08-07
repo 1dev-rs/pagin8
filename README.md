@@ -93,6 +93,15 @@ Pagin8 support a wide range of operators for comparing values and constructing c
 
 > **Note:** On PostgreSQL, string operators use `ILIKE` (case-insensitive). On SQL Server, they use `LIKE` — case-sensitivity depends on the database collation.
 
+> **Indexing `ILIKE` on PostgreSQL:** a plain btree index on a text column cannot be used by
+> `ILIKE`, even for `eq` (no wildcards) — Postgres has no built-in expression match between `col
+> ILIKE @value` and a `lower(col)` index. If your table is large and you've indexed a text column
+> as `CREATE INDEX ON t (lower(col))`, opt in to `UseIndexFriendlyTextComparisons` (see
+> [Configuration](#configuration)) so `eq`/`in`/`stw` emit `lower(col) = lower(@value)` /
+> `lower(col) LIKE lower(@value)||'%'` instead — same results, sargable against that index.
+> `cs`/`enw` (contains/ends-with) are unaffected either way; a substring/suffix scan needs
+> `pg_trgm`, not a WHERE-clause rewrite.
+
 ### Logical Operators
 
 -   `and`: Logical AND
@@ -521,6 +530,15 @@ builder.Services.AddPagin8Backend(
 var app = builder.Build();
 app.Run();
 ```
+
+### Configuration
+
+`AddPagin8`'s `ServiceConfiguration` also accepts:
+
+| Option | Default | Effect |
+|---|---|---|
+| `IgnoreUnknownSelectFields` | `false` | Silently drop `select=` fields not present on the entity instead of throwing. |
+| `UseIndexFriendlyTextComparisons` | `false` | **PostgreSQL only.** Off by default — every existing consumer keeps its current `ILIKE` behavior unless it opts in. When `true`: `eq`/`in`/`stw` on text columns emit `lower(column) = lower(@value)` / `lower(column) LIKE lower(@value)\|\|'%'` instead of `column ILIKE @value` — identical result set for ordinary values, but sargable against a `lower(column)` btree index (`ILIKE` never is). One caveat: `eq`/`in` values containing a literal `%`/`_` are treated as SQL wildcards under `ILIKE` today; under this flag they become literal characters in an exact match — arguably the more correct behavior for "equals", but check before enabling if you rely on the old quirk. `cs`/`enw` are untouched by this flag either way — those need `pg_trgm`, not a rewrite. |
 
 ### 2️⃣ Create Repository (5 lines!)
 

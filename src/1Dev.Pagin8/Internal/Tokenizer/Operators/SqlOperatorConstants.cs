@@ -25,6 +25,17 @@ public static class SqlOperatorConstants
 
     private static bool IsSqlServer => Pagin8Runtime.Config.DatabaseType == DatabaseType.SqlServer;
 
+    // Postgres only (see ServiceConfiguration.UseIndexFriendlyTextComparisons). Off by default —
+    // every dictionary below keeps emitting ILIKE for eq/stw so existing consumers are unaffected
+    // unless they opt in.
+    private static bool UseIndexFriendlyTextComparisons => !IsSqlServer && Pagin8Runtime.Config.UseIndexFriendlyTextComparisons;
+
+    // Exposed for the token visitors: `eq`/`in` (Equals path) and `stw` need their LEFT-hand
+    // column wrapped in `lower(...)` under the flag, to match the `=`/`LIKE` operator swap below —
+    // ILIKE needed no such wrapping (it case-folds internally), `=`/`LIKE` do not.
+    public static bool ShouldLowerTextColumn(ComparisonOperator op, bool isText) =>
+        isText && UseIndexFriendlyTextComparisons && op is ComparisonOperator.Equals or ComparisonOperator.In or ComparisonOperator.StartsWith;
+
     private static readonly Dictionary<ComparisonOperator, string> _comparisonSqlMapPostgre = new()
     {
         { ComparisonOperator.Equals, "=" },
@@ -57,14 +68,29 @@ public static class SqlOperatorConstants
         { ComparisonOperator.Between, "BETWEEN" }
     };
 
+    // eq/stw only — cs/enw stay ILIKE regardless of the flag: no WHERE-clause rewrite makes a
+    // substring/suffix scan sargable against a plain btree, that needs pg_trgm.
+    private static readonly Dictionary<ComparisonOperator, string> _comparisonSqlMapPostgreIndexFriendly =
+        new(_comparisonSqlMapPostgre) { [ComparisonOperator.StartsWith] = "LIKE" };
+
     public static Dictionary<ComparisonOperator, string> ComparisonSqlMap =>
-        IsSqlServer ? _comparisonSqlMapSqlServer : _comparisonSqlMapPostgre;
+        IsSqlServer ? _comparisonSqlMapSqlServer
+        : UseIndexFriendlyTextComparisons ? _comparisonSqlMapPostgreIndexFriendly
+        : _comparisonSqlMapPostgre;
 
     private static readonly Dictionary<ComparisonOperator, string> _caseSensitiveComparisonSqlMapPostgre = new()
     {
         { ComparisonOperator.Equals, "ILIKE" },
         // Note: For IN operator with text values, SQL Server uses standard IN syntax
         // The actual value formatting is handled in the visitor (SqlServerTokenVisitor or NpgsqlTokenVisitor)
+        { ComparisonOperator.In, "IN" }
+    };
+
+    // `=`/`IN` are sargable against a `lower(column)` btree index once the visitor wraps the
+    // column side in `lower(...)` (gated on ShouldLowerTextColumn above) — ILIKE never was.
+    private static readonly Dictionary<ComparisonOperator, string> _caseSensitiveComparisonSqlMapPostgreIndexFriendly = new()
+    {
+        { ComparisonOperator.Equals, "=" },
         { ComparisonOperator.In, "IN" }
     };
 
@@ -77,7 +103,9 @@ public static class SqlOperatorConstants
     };
 
     public static Dictionary<ComparisonOperator, string> CaseSensitiveComparisonSqlMap =>
-        IsSqlServer ? _caseSensitiveComparisonSqlMapSqlServer : _caseSensitiveComparisonSqlMapPostgre;
+        IsSqlServer ? _caseSensitiveComparisonSqlMapSqlServer
+        : UseIndexFriendlyTextComparisons ? _caseSensitiveComparisonSqlMapPostgreIndexFriendly
+        : _caseSensitiveComparisonSqlMapPostgre;
 
     public static readonly Dictionary<string, NestingOperator> QueryNestingMap = new()
     {
@@ -152,14 +180,25 @@ public static class SqlOperatorConstants
         { ComparisonOperator.Between, "NOT BETWEEN" },
     };
 
+    private static readonly Dictionary<ComparisonOperator, string> _negatedOperatorSqlMapPostgreIndexFriendly =
+        new(_negatedOperatorSqlMapPostgre) { [ComparisonOperator.StartsWith] = "NOT LIKE" };
+
     public static Dictionary<ComparisonOperator, string> NegatedOperatorSqlMap =>
-        IsSqlServer ? _negatedOperatorSqlMapSqlServer : _negatedOperatorSqlMapPostgre;
+        IsSqlServer ? _negatedOperatorSqlMapSqlServer
+        : UseIndexFriendlyTextComparisons ? _negatedOperatorSqlMapPostgreIndexFriendly
+        : _negatedOperatorSqlMapPostgre;
 
     private static readonly Dictionary<ComparisonOperator, string> _negatedCaseSensitiveSqlMapPostgre = new()
     {
         { ComparisonOperator.Equals, "NOT ILIKE" },
         // Note: For NOT IN operator with text values, SQL Server uses standard NOT IN syntax
         // The actual value formatting is handled in the visitor (SqlServerTokenVisitor or NpgsqlTokenVisitor)
+        { ComparisonOperator.In, "NOT IN" }
+    };
+
+    private static readonly Dictionary<ComparisonOperator, string> _negatedCaseSensitiveSqlMapPostgreIndexFriendly = new()
+    {
+        { ComparisonOperator.Equals, "!=" },
         { ComparisonOperator.In, "NOT IN" }
     };
 
@@ -172,7 +211,9 @@ public static class SqlOperatorConstants
     };
 
     public static Dictionary<ComparisonOperator, string> NegatedCaseSensitiveOperatorSqlMap =>
-        IsSqlServer ? _negatedCaseSensitiveSqlMapSqlServer : _negatedCaseSensitiveSqlMapPostgre;
+        IsSqlServer ? _negatedCaseSensitiveSqlMapSqlServer
+        : UseIndexFriendlyTextComparisons ? _negatedCaseSensitiveSqlMapPostgreIndexFriendly
+        : _negatedCaseSensitiveSqlMapPostgre;
 
     public static readonly Dictionary<string, ArrayOperator> ArrayOperatorMap = new()
     {
