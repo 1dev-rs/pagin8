@@ -325,6 +325,10 @@ To initialize the every next page by same criteria, besides columns with directi
 
 There are a few more placeholders that you can use while setting the last value, those are `$empty` for empty strings, and `$null` for `null` values.
 
+String cursors are converted from Cyrillic to Latin by default in PostgreSQL and SQL Server.
+Add `[SkipCursorTransliteration]` from `_1Dev.Pagin8.Internal.Attributes` to a query DTO property when the client sends its original stored sort value.
+Each field in a composite sort follows its own policy. `[UseTranslit]` controls search independently and can be combined with this attribute.
+
 ## Paging — Limit Validation
 
 The `limit` value must be a positive integer. Providing `limit.0` or a negative value will result in a `Pagin8Exception` being thrown.
