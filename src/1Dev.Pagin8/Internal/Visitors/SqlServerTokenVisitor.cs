@@ -775,7 +775,7 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
 
         return typeCode switch
         {
-            TypeCode.String => Transliteration.CyrlToLatin(value),
+            TypeCode.String => GetColumnInfo<T>(field, useTranslit: false).SkipCursorTransliteration ? value : Transliteration.CyrlToLatin(value),
             TypeCode.DateTime => DateTime.TryParse(value, out var date) ? (DateTime?)date : throw new ArgumentException($"Cannot format value {value} as DateTime"),
             TypeCode.Int16 => short.TryParse(value, out var shortValue) ? (short?)shortValue : throw new ArgumentException($"Cannot format value {value} as Int16"),
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? (int?)intValue : throw new ArgumentException($"Cannot format value {value} as Int32"),

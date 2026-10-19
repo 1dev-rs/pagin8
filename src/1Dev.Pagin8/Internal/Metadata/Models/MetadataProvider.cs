@@ -113,7 +113,10 @@ public class MetadataProvider : IMetadataProvider
 
         var isNullAllowed = IsNullAllowed(propertyInfo);
 
-        return new ColumnInfo(columnName, propertyInfo.PropertyType, isTranslit, isNullAllowed, isKey);
+        return new ColumnInfo(columnName, propertyInfo.PropertyType, isTranslit, isNullAllowed, isKey)
+        {
+            SkipCursorTransliteration = propertyInfo.GetCustomAttribute<SkipCursorTransliterationAttribute>() is not null
+        };
     }
 
     public string GetEntityKey(Type entityType)

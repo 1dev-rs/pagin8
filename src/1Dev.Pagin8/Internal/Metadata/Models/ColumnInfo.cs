@@ -11,4 +11,6 @@ public record ColumnInfo(string Name, Type Type, bool IsTranslit = false, bool I
     public Type Type { get; set; } = Type;
 
     public bool IsKey { get; set; } = IsKey;
+
+    public bool SkipCursorTransliteration { get; set; }
 }
