@@ -66,7 +66,8 @@ public class MetadataProvider : IMetadataProvider
         }
 
         List<ColumnMetadata> nestedProperties = [];
-        var arrayInnerType = GetIEnumerableElementType(propertyType);
+        var arrayElementType = GetIEnumerableElementType(propertyType);
+        var arrayInnerType = arrayElementType is null ? null : Nullable.GetUnderlyingType(arrayElementType) ?? arrayElementType;
 
         var effectiveType = arrayInnerType ?? propertyType;
         var typeCode = effectiveType.GetPagin8TypeCode();
@@ -80,7 +81,8 @@ public class MetadataProvider : IMetadataProvider
         if (arrayInnerType != null)
         {
             flags.Add(ArrayFlag);
-            if (arrayInnerType != typeof(string) && currentDepth < MaxSerializationDepth)
+            // Only complex element types have nested columns; value types (DateTime, Guid...) would list their own members
+            if (arrayInnerType.IsClass && arrayInnerType != typeof(string) && currentDepth < MaxSerializationDepth)
             {
                 var nextDepth = currentDepth + 1;
                 nestedProperties = Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(arrayInnerType, nextDepth).ToList();

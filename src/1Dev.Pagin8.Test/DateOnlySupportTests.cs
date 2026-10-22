@@ -27,6 +27,14 @@ public class TestDateOnlyEntity
     public TestDateOnlyChild? Child { get; set; }
     public List<TestDateOnlyChild> Children { get; set; } = [];
     public List<DateOnly> Holidays { get; set; } = [];
+    public List<DateOnly?> NullableHolidays { get; set; } = [];
+}
+
+public class TestNullableDateTimeEntity
+{
+    [Key]
+    public int Id { get; set; }
+    public DateTime? At { get; set; }
 }
 
 public class TestDateOnlyChild
@@ -191,8 +199,26 @@ public class DateOnlyPostgreSqlTests
     {
         var result = _sut.BuildSqlQuery<TestDateOnlyEntity>(DateOnlyTestHelper.Build("child.with=(issuedOn.gte.2024-01-15)"));
 
-        result.Builder.AsSql().Sql.Should().Contain("DATE((child ->> 'issuedOn')::text) >= DATE(@p0)");
+        result.Builder.AsSql().Sql.Should().Contain("DATE((child ->> 'issuedOn')::timestamp) >= DATE(@p0)");
         result.Builder.Build().SqlParameters[0].Argument.Should().Be(new DateTime(2024, 1, 15));
+    }
+
+    [Fact]
+    public void In_OnJsonDateField_ComparesAsTimestamp()
+    {
+        var result = _sut.BuildSqlQuery<TestDateOnlyEntity>(DateOnlyTestHelper.Build("children.with=(issuedOn.in.(2024-01-15))"));
+
+        result.Builder.AsSql().Sql.Should().Contain("(x.val ->> 'issuedOn')::timestamp IN ('2024-01-15 00:00:00.0000000')");
+    }
+
+    [Theory]
+    [InlineData("child.with=(issuedOn.ago.3d)", "(child ->> 'issuedOn')::timestamp BETWEEN")]
+    [InlineData("children.with=(issuedOn.ago.3d)", "(x.val ->> 'issuedOn')::timestamp BETWEEN")]
+    public void DateRange_OnJsonDateField_ComparesAsTimestamp(string query, string expectedSql)
+    {
+        var result = _sut.BuildSqlQuery<TestDateOnlyEntity>(DateOnlyTestHelper.Build(query));
+
+        result.Builder.AsSql().Sql.Should().Contain(expectedSql);
     }
 
     [Fact]
@@ -268,7 +294,8 @@ public class DateOnlySqlServerTests
         var result = _sut.BuildSqlQuery<TestDateOnlyEntity>(DateOnlyTestHelper.Build("paging=(sort(validUntil.asc))"));
 
         result.Builder.AsSql().Sql.Should().Contain("ISNULL(validUntil, @p0) ASC");
-        result.Builder.Build().SqlParameters[0].Argument.Should().Be(DateTime.MinValue);
+        // SQL "datetime" parameters cannot hold DateTime.MinValue
+        result.Builder.Build().SqlParameters[0].Argument.Should().Be(new DateTime(1753, 1, 1));
     }
 
     [Fact]
@@ -280,6 +307,18 @@ public class DateOnlySqlServerTests
         result.Builder.AsSql().Sql.Should().Contain("birthDate > @p0");
         result.Builder.Build().SqlParameters
             .Should().Contain(sp => sp.Argument != null && sp.Argument.Equals(new DateTime(2024, 1, 15)));
+    }
+
+    [Theory]
+    [InlineData("children.with=(issuedOn.in.(2024-01-15))", "TRY_CONVERT(DATETIME2, JSON_VALUE(x.value, '$.issuedOn')) IN (")]
+    [InlineData("child.with=(issuedOn.ago.3d)", "TRY_CONVERT(DATETIME2, JSON_VALUE(child, '$.issuedOn')) BETWEEN")]
+    [InlineData("children.with=(issuedOn.ago.3d)", "TRY_CONVERT(DATETIME2, JSON_VALUE(x.value, '$.issuedOn')) BETWEEN")]
+    [InlineData("child.with=(issuedOn.eq.2024-01-15)", "CAST(TRY_CONVERT(DATETIME2, JSON_VALUE(child, '$.issuedOn')) AS DATE) = CAST(@p0 AS DATE)")]
+    public void JsonDateField_IsConvertedFromText(string query, string expectedSql)
+    {
+        var result = _sut.BuildSqlQuery<TestDateOnlyEntity>(DateOnlyTestHelper.Build(query));
+
+        result.Builder.AsSql().Sql.Should().Contain(expectedSql);
     }
 }
 
@@ -486,6 +525,46 @@ public class DateOnlyLinqTests : Pagin8TestBase
         result.Select(x => x.Id).Should().BeEquivalentTo([2]);
     }
 
+    [Fact]
+    public void ArrayOperation_Include_OnNullableDateOnlyList_Filters()
+    {
+        var data = new List<TestDateOnlyEntity>
+        {
+            new() { Id = 1, NullableHolidays = [new DateOnly(2024, 12, 25)] },
+            new() { Id = 2, NullableHolidays = [null] },
+        }.AsQueryable();
+
+        var token = new ArrayOperationToken("NullableHolidays", ["2024-12-25"], ArrayOperator.Include, 1);
+
+        CreateVisitor().Visit(token, data).Select(x => x.Id).Should().Equal(1);
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.Equals, new[] { 1 })]
+    [InlineData(ComparisonOperator.GreaterThan, new[] { 2 })]
+    public void Comparison_OnNullableDateTime_UsesDatePart(ComparisonOperator op, int[] expectedIds)
+    {
+        var data = new List<TestNullableDateTimeEntity>
+        {
+            new() { Id = 1, At = new DateTime(2024, 1, 16, 10, 0, 0) },
+            new() { Id = 2, At = new DateTime(2024, 1, 17, 8, 0, 0) },
+            new() { Id = 3, At = null },
+        }.AsQueryable();
+
+        var visitor = new LinqTokenVisitor<TestNullableDateTimeEntity>(new Pagin8MetadataProvider(new MetadataProvider()), new DateProcessor());
+        var result = visitor.Visit(new ComparisonToken("At", op, "2024-01-16", 1), data);
+
+        result.Select(x => x.Id).Should().BeEquivalentTo(expectedIds);
+    }
+
+    [Fact]
+    public void Comparison_RejectsFormatsSqlRejects()
+    {
+        var act = () => CreateVisitor().Visit(new ComparisonToken("BirthDate", ComparisonOperator.Equals, "15.01.2024", 1), Data()).ToList();
+
+        act.Should().Throw<_1Dev.Pagin8.Internal.Exceptions.Base.Pagin8Exception>();
+    }
+
     private static LinqTokenVisitor<TestDateOnlyEntity> CreateVisitor()
         => new(new Pagin8MetadataProvider(new MetadataProvider()), new DateProcessor());
 }
@@ -523,6 +602,19 @@ public class DateOnlyMetadataTests
     }
 
     [Fact]
+    public void Meta_ForValueTypeLists_HasNoNestedStructMembers()
+    {
+        var meta = new Pagin8MetadataProvider(new MetadataProvider()).Get(typeof(TestDateOnlyEntity)).ToList();
+
+        meta.Single(x => x.Name == "holidays").Properties.Should().BeEmpty();
+        var nullableHolidays = meta.Single(x => x.Name == "nullableHolidays");
+        nullableHolidays.Type.Should().Be("DateTime");
+        nullableHolidays.Flags.Should().Contain("date-only").And.Contain("array");
+        nullableHolidays.Properties.Should().BeEmpty();
+        meta.Single(x => x.Name == "children").Properties.Select(x => x.Name).Should().Contain("issuedOn");
+    }
+
+    [Fact]
     public void Meta_ForDateTime_HasNoDateOnlyFlag()
     {
         var meta = new Pagin8MetadataProvider(new MetadataProvider()).Get(typeof(TestEntity)).ToList();
@@ -553,5 +645,29 @@ public class DateOnlyDapperMappingTests
         rows[0].ValidUntil.Should().Be(new DateOnly(2024, 2, 1));
         rows[1].BirthDate.Should().Be(new DateOnly(2024, 3, 10));
         rows[1].ValidUntil.Should().BeNull();
+    }
+}
+
+public class TestAggregateEntity
+{
+    [Key]
+    public int Id { get; set; }
+
+    [global::Attributes.Aggregate(global::Attributes.AggregateType.Max)]
+    public DateOnly LastVisit { get; set; }
+}
+
+public class AggregateValidationTests
+{
+    [Fact]
+    public async Task MinMaxOnNonNumericProperty_FailsWithClearMessage()
+    {
+        var provider = new FilterProvider(
+            new Moq.Mock<_1Dev.Pagin8.Extensions.Backend.Interfaces.IDbConnectionFactory>().Object,
+            new Moq.Mock<ISqlQueryBuilder>().Object);
+
+        var act = () => provider.GetAggregatesAsync<TestAggregateEntity>("vw", new _1Dev.Pagin8.Extensions.Backend.Models.FilteredDataQuery());
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*requires a numeric property*");
     }
 }

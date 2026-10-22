@@ -52,9 +52,23 @@ public class FilterProvider : IFilterProvider
                                 "Avg"   => "AVG",
                                 _       => "SUM"
                             };
+                        // Results are returned as decimal and NULL is coalesced to 0, so only COUNT works on non-numeric columns
+                        if (func != "COUNT" && !IsNumeric(p.PropertyType))
+                            throw new InvalidOperationException($"[{nameof(AggregateAttribute)}] {func} on {t.Name}.{p.Name} requires a numeric property, but it is {p.PropertyType.Name}. Only Count is supported for non-numeric properties.");
+
                         return (Property: p, Func: func);
                     }))
                 .ToList());
+
+    private static bool IsNumeric(Type type)
+    {
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        if (type.IsEnum) return false;
+
+        return Type.GetTypeCode(type) is TypeCode.Byte or TypeCode.SByte or TypeCode.Int16 or TypeCode.UInt16
+            or TypeCode.Int32 or TypeCode.UInt32 or TypeCode.Int64 or TypeCode.UInt64
+            or TypeCode.Single or TypeCode.Double or TypeCode.Decimal;
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FilterProvider"/> class.

@@ -15,6 +15,7 @@ using Pagin8.Internal.Configuration;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Data.SqlTypes;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Runtime.CompilerServices;
@@ -192,7 +193,7 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
     {
         var (procType, innerType) = DetermineProcessingType(typeof(T), token.JsonPath);
         var typeCode = GetTypeCodeForProperty(innerType, token.Field);
-        var columnInfo = GetColumnInfo<T>(token.Field);
+        var columnInfo = GetColumnInfo(innerType, token.Field);
         var formattedName = TryFormatColumnName(columnInfo.Name);
         var leftHandSide = GetLeftHandSideExpression(procType, formattedName, token.JsonPath, typeCode);
 
@@ -386,12 +387,17 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
 
     private string GetLeftHandSideExpression(ProcessingType procType, string column, string? jsonPath, TypeCode typeCode)
     {
-        return procType switch
+        var expression = procType switch
         {
             ProcessingType.JsonArray => $"JSON_VALUE(x.value, '$.{column}'){GetJsonFieldType(typeCode)}",
             ProcessingType.Json => $"JSON_VALUE({jsonPath}, '$.{column}'){GetJsonFieldType(typeCode)}",
             _ => column
         };
+
+        // JSON_VALUE returns text, so dates would otherwise be compared as strings
+        return procType != ProcessingType.Regular && typeCode == TypeCode.DateTime
+            ? $"TRY_CONVERT(DATETIME2, {expression})"
+            : expression;
     }
 
     private void AppendEmptyQueryConditions(QueryBuilderResult result, Type innerType, IsToken token, string leftHandSide, string negation)
@@ -512,7 +518,8 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
             case TypeCode.Decimal:
                 return -1;
             case TypeCode.DateTime:
-                return DateTime.MinValue;
+                // Parameters are sent as SQL "datetime" by default, which cannot hold DateTime.MinValue (year 1)
+                return SqlDateTime.MinValue.Value;
             // SQL Server has no boolean literal; 0 (int) is the BIT-compatible fallback
             // for ISNULL(boolCol, <coalesce>) so it's never formatted as "False" via ToString().
             case TypeCode.Boolean:
@@ -702,7 +709,7 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
         return typeCode switch
         {
             TypeCode.String => MapComparisonToSqlServerString(comparison, value, isTranslit, isSort),
-            TypeCode.DateTime => TryParseExactLocalDate(value, out var date) ? date : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Invalid date format '{value}'. Expected yyyy-MM-dd or ISO-8601."),
+            TypeCode.DateTime => DateParser.TryParseExactLocalDate(value, out var date) ? date : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Invalid date format '{value}'. Expected yyyy-MM-dd or ISO-8601."),
             TypeCode.Int16 => short.TryParse(value, out var shortValue) ? shortValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int16"),
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? intValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int32"),
             TypeCode.Int64 => long.TryParse(value, out var longValue) ? longValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int64"),
@@ -746,29 +753,6 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
             .Replace("%", QueryBuilderHelper.EscapeCharacter + "%")
             .Replace("[", QueryBuilderHelper.EscapeCharacter + "[")
             .Replace("]", QueryBuilderHelper.EscapeCharacter + "]");
-    }
-
-    private static bool TryParseExactLocalDate(string value, out DateTime result)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            result = default;
-            return false;
-        }
-
-        var formats = new[]
-        {
-            "yyyy-MM-dd",
-            "yyyy-MM-ddTHH:mm:ss",
-            "yyyy-MM-ddTHH:mm:ss.fff"
-        };
-
-        return DateTime.TryParseExact(
-            value,
-            formats,
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.None,
-            out result);
     }
 
     private dynamic? FormatColumnValue<T>(string field, string? value) where T : class

@@ -188,7 +188,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     {
         var (procType, innerType) = DetermineProcessingType(typeof(T), token.JsonPath);
         var typeCode = GetTypeCodeForProperty(innerType, token.Field);
-        var columnInfo = GetColumnInfo<T>(token.Field);
+        var columnInfo = GetColumnInfo(innerType, token.Field);
         var formattedName = TryFormatColumnName(columnInfo.Name);
         var leftHandSide = GetLeftHandSideExpression(procType, formattedName, token.JsonPath, typeCode);
 
@@ -701,7 +701,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         return typeCode switch
         {
             TypeCode.String => QueryBuilderHelper.MapComparisonToNpgsqlString(comparison, value, isTranslit, isSort),
-            TypeCode.DateTime => TryParseExactLocalDate(value, out var date)? date : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Invalid date format '{value}'. Expected yyyy-MM-dd or ISO-8601."),
+            TypeCode.DateTime => DateParser.TryParseExactLocalDate(value, out var date)? date : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Invalid date format '{value}'. Expected yyyy-MM-dd or ISO-8601."),
             TypeCode.Int16 => short.TryParse(value, out var shortValue) ? shortValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int16"),
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? intValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int32"),
             TypeCode.Int64 => long.TryParse(value, out var longValue) ? longValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int64"),
@@ -711,29 +711,6 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? decimalValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Decimal"),
             _ => throw new Pagin8Exception(Pagin8StatusCode.Pagin8_UnsupportedComparison.Code, $"Cannot format values for TypeCode {typeCode}")
         };
-    }
-
-    private static bool TryParseExactLocalDate(string value, out DateTime result)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            result = default;
-            return false;
-        }
-
-        var formats = new[]
-        {
-            "yyyy-MM-dd",            
-            "yyyy-MM-ddTHH:mm:ss",   
-            "yyyy-MM-ddTHH:mm:ss.fff"
-        };
-
-        return DateTime.TryParseExact(
-            value,
-            formats,
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.None,          
-            out result);
     }
 
 
@@ -975,6 +952,7 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
             TypeCode.Byte or TypeCode.SByte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64 or TypeCode.Int16
                 or TypeCode.Int32 or TypeCode.Int64 or TypeCode.Double or TypeCode.Single => "::int",
             TypeCode.Decimal => "::numeric",
+            TypeCode.DateTime => "::timestamp",
             _ => "::text"
         };
     }

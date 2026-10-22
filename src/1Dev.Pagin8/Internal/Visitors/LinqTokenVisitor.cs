@@ -64,13 +64,25 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
             right = ConvertToExpression(comparison.Value, propertyType);
         }
 
+        Expression? hasValue = null;
         if (propertyType == typeof(DateTime))
         {
             leftProcessed = Expression.Property(leftProcessed, GetPropertyInfo(typeof(DateTime), "Date"));
             right = Expression.Property(right, GetPropertyInfo(typeof(DateTime), "Date"));
         }
+        else if (propertyType == typeof(DateTime?))
+        {
+            // Compare on the date part like SQL DATE(); a null value never matches (as in SQL)
+            hasValue = Expression.Property(left, nameof(Nullable<DateTime>.HasValue));
+            leftProcessed = Expression.Property(Expression.Property(left, nameof(Nullable<DateTime>.Value)), GetPropertyInfo(typeof(DateTime), "Date"));
+            right = Expression.Property(Expression.Convert(right, typeof(DateTime)), GetPropertyInfo(typeof(DateTime), "Date"));
+        }
 
         var comparisonExpression = LinqOperatorProcessor.GetLinqExpression(token.Operator, isText, leftProcessed, right);
+        if (hasValue != null)
+        {
+            comparisonExpression = Expression.AndAlso(hasValue, comparisonExpression);
+        }
 
         return token.IsNegated ? Expression.Not(comparisonExpression) : comparisonExpression;
     }
@@ -452,7 +464,7 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
         return typeCode switch
         {
             TypeCode.String => Transliteration.ToLowerBoldLatin(value),
-            TypeCode.DateTime => DateTime.TryParse(value, out var date) ? date : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as DateTime"),
+            TypeCode.DateTime => DateParser.TryParseExactLocalDate(value, out var date) ? date : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Invalid date format '{value}'. Expected yyyy-MM-dd or ISO-8601."),
             TypeCode.Int16 => short.TryParse(value, out var shortValue) ? shortValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int16"),
             TypeCode.Int32 => int.TryParse(value, out var intValue) ? intValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int32"),
             TypeCode.Int64 => long.TryParse(value, out var longValue) ? longValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int64"),
@@ -613,7 +625,8 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
 
     private static IQueryable<T> ProcessArrayOperation(ArrayOperationToken token, IQueryable<T> queryable, PropertyInfo propertyInfo, Type elementType)
     {
-        var values = token.Values.Select(v => elementType == typeof(DateOnly) ? ToDateOnly(v) : Convert.ChangeType(v, elementType)).ToList();
+        var underlyingType = Nullable.GetUnderlyingType(elementType) ?? elementType;
+        var values = token.Values.Select(v => underlyingType == typeof(DateOnly) ? ToDateOnly(v) : Convert.ChangeType(v, underlyingType)).ToList();
         if (values.Count == 0)
             return queryable; // or throw?
 
@@ -624,13 +637,13 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
         {
             ArrayOperator.Include => values.Aggregate((Expression)null, (current, value) =>
                 current == null
-                    ? Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value))
-                    : Expression.AndAlso(current, Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value)))),
+                    ? Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value, elementType))
+                    : Expression.AndAlso(current, Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value, elementType)))),
 
             ArrayOperator.Exclude => values.Aggregate((Expression)null, (current, value) =>
                 current == null ?
-                    Expression.Not(Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value))) :
-                    Expression.AndAlso(current, Expression.Not(Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value))))
+                    Expression.Not(Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value, elementType))) :
+                    Expression.AndAlso(current, Expression.Not(Expression.Call(typeof(Enumerable), "Contains", [elementType], propertyExpression, Expression.Constant(value, elementType))))
                 ),
 
 
