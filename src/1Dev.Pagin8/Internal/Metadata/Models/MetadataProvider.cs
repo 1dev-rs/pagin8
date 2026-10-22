@@ -20,7 +20,9 @@ public class MetadataProvider : IMetadataProvider
 
     // Shared across all instances — entity types and their attributes never change at runtime.
     private static readonly BindingFlags LookupFlags = BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance;
-    private static readonly ConcurrentDictionary<TypeNameKey, PropertyInfo?> PropertyCache = new();
+    // Only names that resolve to a property are cached: field names come from the query string,
+    // so caching misses would let arbitrary requests grow these caches without bound.
+    private static readonly ConcurrentDictionary<TypeNameKey, PropertyInfo> PropertyCache = new();
     private static readonly ConcurrentDictionary<Type, string> EntityKeyCache = new();
     private static readonly ConcurrentDictionary<TypeNameKey, bool> FilterableCache = new();
     private static readonly ConcurrentDictionary<TypeNameKey, bool> SortableCache = new();
@@ -29,9 +31,14 @@ public class MetadataProvider : IMetadataProvider
     private static readonly ConcurrentDictionary<TypeNameKey, TypeCode> TypeCodeCache = new();
 
     private static PropertyInfo? GetCachedProperty(Type type, string propertyName)
-        => PropertyCache.GetOrAdd(
-            new TypeNameKey(type, propertyName),
-            static key => key.Type.GetProperty(key.Name, LookupFlags));
+    {
+        var key = new TypeNameKey(type, propertyName);
+        if (PropertyCache.TryGetValue(key, out var cached)) return cached;
+
+        var property = type.GetProperty(propertyName, LookupFlags);
+        if (property != null) PropertyCache.TryAdd(key, property);
+        return property;
+    }
 
     public IEnumerable<ColumnMetadata> Get<TNonFilterableAttribute, TNonSortable, TMetaExclude>(Type entityType, int currentDepth = 0) where TNonFilterableAttribute : Attribute where TNonSortable : Attribute where TMetaExclude : Attribute
     {
@@ -159,7 +166,7 @@ public class MetadataProvider : IMetadataProvider
             });
 
     public bool IsFieldFilterable(Type entityType, string propertyName)
-        => FilterableCache.GetOrAdd(
+        => GetCachedProperty(entityType, propertyName) is not null && FilterableCache.GetOrAdd(
             new TypeNameKey(entityType, propertyName),
             static key =>
             {
@@ -168,7 +175,7 @@ public class MetadataProvider : IMetadataProvider
             });
 
     public bool IsFieldSortable(Type entityType, string propertyName)
-        => SortableCache.GetOrAdd(
+        => GetCachedProperty(entityType, propertyName) is not null && SortableCache.GetOrAdd(
             new TypeNameKey(entityType, propertyName),
             static key =>
             {
@@ -177,12 +184,12 @@ public class MetadataProvider : IMetadataProvider
             });
 
     public bool IsFieldInMeta(Type entityType, string propertyName)
-        => InMetaCache.GetOrAdd(
+        => GetCachedProperty(entityType, propertyName) is not null && InMetaCache.GetOrAdd(
             new TypeNameKey(entityType, propertyName),
             static key => GetCachedProperty(key.Type, key.Name) != null);
 
     public bool IsNullAllowed(Type entityType, string propertyName)
-        => NullAllowedCache.GetOrAdd(
+        => GetCachedProperty(entityType, propertyName) is not null && NullAllowedCache.GetOrAdd(
             new TypeNameKey(entityType, propertyName),
             static key =>
             {
