@@ -1,4 +1,6 @@
-﻿using _1Dev.Pagin8.Internal.Configuration;
+﻿using System.Collections;
+using System.Reflection;
+using _1Dev.Pagin8.Internal.Configuration;
 using _1Dev.Pagin8.Internal.Helpers;
 using _1Dev.Pagin8.Internal.Tokenizer.Tokens;
 using _1Dev.Pagin8.Internal.Validators.Contracts;
@@ -23,11 +25,38 @@ public class TokenContextValidator(IPagin8MetadataProvider metadataProvider, Ser
             InToken inToken => ValidateAndLog<T>(CanBeFiltered<T>(inToken.Field), inToken.Field),
             IsToken isToken => ValidateAndLog<T>(CanBeFiltered<T>(isToken.Field), isToken.Field),
             ArrayOperationToken arrayOperationToken => ValidateAndLog<T>(CanBeFiltered<T>(arrayOperationToken.Field), arrayOperationToken.Field),
-            NestedFilterToken nestedFilterToken => ValidateAndLog<T>(CanBeFiltered<T>(nestedFilterToken.Field), nestedFilterToken.Field),
+            NestedFilterToken nestedFilterToken => ValidateAndLog<T>(CanBeFiltered<T>(nestedFilterToken.Field), nestedFilterToken.Field)
+                                                   && ValidateNestedTokens<T>(nestedFilterToken),
             PagingToken { Sort: { } sort } => sort.SortExpressions.All(x => ValidateAndLog<T>(CanBeSorted<T>(x.Field), x.Field)),
             SelectToken selectToken => ValidateOrSanitizeSelectFields<T>(selectToken),
             _ => true
         };
+    }
+
+    // Inner fields of field.with=(...) belong to the nested type, so they are validated against it rather than T
+    private bool ValidateNestedTokens<T>(NestedFilterToken token) where T : class
+    {
+        var nestedType = GetNestedType(metadataProvider.GetColumnInfo<T>(token.Field).Type);
+
+        // Untyped JSON (string/JsonDocument/...) has no metadata to validate against
+        if (!nestedType.IsClass || nestedType == typeof(string)) return true;
+
+        var validate = ValidateNestedMethod.MakeGenericMethod(nestedType);
+        return (bool)validate.Invoke(this, [token.Tokens])!;
+    }
+
+    private static readonly MethodInfo ValidateNestedMethod =
+        typeof(TokenContextValidator).GetMethod(nameof(ValidateFilterableTokenFields))!;
+
+    private static Type GetNestedType(Type type)
+    {
+        type = Nullable.GetUnderlyingType(type) ?? type;
+
+        if (type == typeof(string)) return type;
+        if (type.IsArray) return type.GetElementType()!;
+        if (type.IsGenericType && typeof(IEnumerable).IsAssignableFrom(type)) return type.GetGenericArguments()[0];
+
+        return type;
     }
 
     private bool ValidateOrSanitizeSelectFields<T>(SelectToken selectToken) where T : class
