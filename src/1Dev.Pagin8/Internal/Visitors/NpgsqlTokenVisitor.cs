@@ -18,6 +18,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using QueryBuilder = InterpolatedSql.Dapper.SqlBuilders.QueryBuilder;
 
 namespace _1Dev.Pagin8.Internal.Visitors;
@@ -858,32 +859,35 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
     {
         var elementType = GetElementTypeOrSelf(valueType);
         var arrayTypeSpecifier = GetPostgresArrayType(elementType);
-        var valuesFormatted = FormatArrayValues(token.Values, elementType);
 
-        if (!valuesFormatted.Any())
+        if (!token.Values.Any())
             return;
+
+        // Values are sent as parameters; never concatenate them into the SQL text
+        var values = ArrayValueConverter.JoinAsParameters(ArrayValueConverter.Convert(token.Values, elementType));
+        var field = TryFormatColumnName(token.Field);
 
         var isDatabaseFieldArray = valueType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(valueType);
 
-        var filterSql = token.Operator switch
+        FormattableString filterSql = token.Operator switch
         {
             ArrayOperator.Include when isDatabaseFieldArray =>
-                $"{token.Field}{arrayTypeSpecifier} @> ARRAY[{valuesFormatted}]{arrayTypeSpecifier}",
+                $"{field:raw}{arrayTypeSpecifier:raw} @> ARRAY[{values}]{arrayTypeSpecifier:raw}",
             ArrayOperator.Exclude when isDatabaseFieldArray =>
-                $"NOT ({token.Field}{arrayTypeSpecifier} && ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+                $"NOT ({field:raw}{arrayTypeSpecifier:raw} && ARRAY[{values}]{arrayTypeSpecifier:raw})",
 
             ArrayOperator.Include =>
-                $"{token.Field} = ANY(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+                $"{field:raw} = ANY(ARRAY[{values}]{arrayTypeSpecifier:raw})",
             ArrayOperator.Exclude =>
-                $"{token.Field} != ALL(ARRAY[{valuesFormatted}]{arrayTypeSpecifier})",
+                $"{field:raw} != ALL(ARRAY[{values}]{arrayTypeSpecifier:raw})",
 
             _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
         };
 
         if (token.IsNegated)
-            result.Builder += $" NOT ({filterSql:raw})";
+            result.Builder += $" NOT ({filterSql})";
         else
-            result.Builder += $" {filterSql:raw}";
+            result.Builder += $" {filterSql}";
     }
 
     private static Type GetElementTypeOrSelf(Type type)
@@ -899,17 +903,12 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
         return type;
     }
 
-    private static string FormatArrayValues(IEnumerable<object> values, Type type)
-    {
-        var array = type == typeof(string) ? values.Select(v => $"'{Transliteration.CyrlToLatin(v.ToString())}'").ToList() : values.Select(v => v.ToString());
-        return string.Join(", ", array);
-    }
-
     private static void ProcessComplexTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type arrayType)
     {
         if (!token.Values.Any())
             return;
 
+        ValidateJsonFieldName(token.JsonPath);
         var col = token.JsonPath;
 
         switch (token.Operator)
@@ -950,21 +949,20 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
 
     private static string BuildJsonbArrayLiteral(IEnumerable<object> values, string field, Type arrayType)
     {
+        // Field and values are JSON-encoded so user input cannot change the JSON structure
         var elements = values.Select(v =>
-        {
-            var jsonbValue = FormatJsonbScalar(v, arrayType);
-            return "{\"" + field + "\": " + jsonbValue + "}";
-        });
+            "{" + JsonSerializer.Serialize(field) + ": " + FormatJsonbScalar(v, arrayType) + "}");
         return "[" + string.Join(", ", elements) + "]";
     }
 
     private static string FormatJsonbScalar(object value, Type type)
     {
-        if (type == typeof(string))
-            return "\"" + Transliteration.CyrlToLatin(value.ToString()!) + "\"";
-        if (type == typeof(bool))
-            return value.ToString()!.ToLowerInvariant();
-        return value.ToString()!;
+        var converted = ArrayValueConverter.Convert(value, type);
+        return converted switch
+        {
+            DateTime dateTime when type.IsDateOnly() => JsonSerializer.Serialize(dateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+            _ => JsonSerializer.Serialize(converted)
+        };
     }
 
     private static string GetJsonFieldType(TypeCode typeCode)
@@ -981,13 +979,23 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
 
     private static string GetPostgresArrayType(Type type)
     {
-        if (type == typeof(int))
-            return "::int[]";
-        if (type == typeof(string))
-            return "::text[]";
-        if (type == typeof(decimal))
-            return "::numeric[]";
-        throw new ArgumentException("Unsupported array type.");
+        type = Nullable.GetUnderlyingType(type) ?? type;
+
+        return type switch
+        {
+            _ when type == typeof(int) => "::int[]",
+            _ when type == typeof(long) => "::bigint[]",
+            _ when type == typeof(short) => "::smallint[]",
+            _ when type == typeof(string) => "::text[]",
+            _ when type == typeof(decimal) => "::numeric[]",
+            _ when type == typeof(double) => "::float8[]",
+            _ when type == typeof(float) => "::float4[]",
+            _ when type == typeof(bool) => "::boolean[]",
+            _ when type == typeof(Guid) => "::uuid[]",
+            _ when type == typeof(DateTime) => "::timestamp[]",
+            _ when type == typeof(DateOnly) => "::date[]",
+            _ => throw new Pagin8Exception(Pagin8StatusCode.Pagin8_PropertyTypeUnknown.Code, $"Array operations are not supported for type {type.Name}.")
+        };
     }
 
     private static readonly ConcurrentDictionary<(Type TokenType, Type EntityType), MethodInfo> _methodCache = new();

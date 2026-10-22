@@ -905,32 +905,39 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
     private static void ProcessSimpleTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type valueType)
     {
         var elementType = GetElementTypeOrSelf(valueType);
-        var valuesFormatted = FormatArrayValues(token.Values, elementType);
 
-        if (!valuesFormatted.Any())
+        if (!token.Values.Any())
             return;
 
         var isDatabaseFieldArray = valueType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(valueType);
+        var field = TryFormatColumnName(token.Field);
 
-        var filterSql = token.Operator switch
+        // Values are sent as parameters; never concatenate them into the SQL text.
+        // Comma-separated array columns are compared as text, so values are sent in their text form there.
+        var converted = ArrayValueConverter.Convert(token.Values, elementType);
+        var values = isDatabaseFieldArray ? converted.Select(v => ToArrayText(v, elementType)).ToList() : converted;
+        var valueRows = ArrayValueConverter.JoinAsParameters(values, wrapInParentheses: true);
+        var valueList = ArrayValueConverter.JoinAsParameters(values);
+
+        FormattableString filterSql = token.Operator switch
         {
             ArrayOperator.Include when isDatabaseFieldArray =>
-                $"(SELECT COUNT(*) FROM (VALUES {valuesFormatted}) AS v(val) WHERE EXISTS(SELECT 1 FROM STRING_SPLIT(CAST({token.Field} AS NVARCHAR(MAX)), ',') WHERE value = CAST(v.val AS NVARCHAR))) = (SELECT COUNT(*) FROM (VALUES {valuesFormatted}) AS v(val))",
+                $"(SELECT COUNT(*) FROM (VALUES {valueRows}) AS v(val) WHERE EXISTS(SELECT 1 FROM STRING_SPLIT(CAST({field:raw} AS NVARCHAR(MAX)), ',') WHERE value = CAST(v.val AS NVARCHAR))) = (SELECT COUNT(*) FROM (VALUES {valueRows}) AS v(val))",
             ArrayOperator.Exclude when isDatabaseFieldArray =>
-                $"NOT EXISTS(SELECT 1 FROM (VALUES {valuesFormatted}) AS v(val) WHERE EXISTS(SELECT 1 FROM STRING_SPLIT(CAST({token.Field} AS NVARCHAR(MAX)), ',') WHERE value = CAST(v.val AS NVARCHAR)))",
+                $"NOT EXISTS(SELECT 1 FROM (VALUES {valueRows}) AS v(val) WHERE EXISTS(SELECT 1 FROM STRING_SPLIT(CAST({field:raw} AS NVARCHAR(MAX)), ',') WHERE value = CAST(v.val AS NVARCHAR)))",
 
             ArrayOperator.Include =>
-                $"{token.Field} IN ({valuesFormatted})",
+                $"{field:raw} IN ({valueList})",
             ArrayOperator.Exclude =>
-                $"{token.Field} NOT IN ({valuesFormatted})",
+                $"{field:raw} NOT IN ({valueList})",
 
             _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
         };
 
         if (token.IsNegated)
-            result.Builder += $" NOT ({filterSql:raw})";
+            result.Builder += $" NOT ({filterSql})";
         else
-            result.Builder += $" {filterSql:raw}";
+            result.Builder += $" {filterSql}";
     }
 
     private static Type GetElementTypeOrSelf(Type type)
@@ -946,38 +953,49 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
         return type;
     }
 
-    private static string FormatArrayValues(IEnumerable<object> values, Type type)
+    // Text form used when comparing against values stored as text (comma-separated columns, JSON_VALUE)
+    private static object ToArrayText(object value, Type type)
     {
-        var array = type == typeof(string) 
-            ? values.Select(v => $"('{Transliteration.CyrlToLatin(v.ToString())}')").ToList() 
-            : values.Select(v => $"({v})");
-        
-        return string.Join(", ", array);
+        return value switch
+        {
+            DateTime dateTime when type.IsDateOnly() => dateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            DateTime dateTime => dateTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture),
+            bool boolean => boolean ? "true" : "false",
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => value
+        };
     }
 
     private static void ProcessComplexTypeArray(ArrayOperationToken token, QueryBuilderResult result, Type arrayType)
     {
-        var valuesFormatted = FormatArrayValues(token.Values, arrayType);
-
-        if (!valuesFormatted.Any())
+        if (!token.Values.Any())
             return;
 
-        var filterSql = token.Operator switch
+        ValidateJsonFieldName(token.JsonPath);
+        ValidateJsonFieldName(token.Field);
+        var col = token.JsonPath;
+        var jsonField = token.Field;
+
+        // JSON_VALUE returns text, so values are sent as text parameters
+        var values = ArrayValueConverter.Convert(token.Values, arrayType).Select(v => ToArrayText(v, arrayType)).ToList();
+        var valueRows = ArrayValueConverter.JoinAsParameters(values, wrapInParentheses: true);
+
+        FormattableString filterSql = token.Operator switch
         {
-            ArrayOperator.Include => 
-                $"(SELECT COUNT(*) FROM (VALUES {valuesFormatted}) AS v(val) WHERE EXISTS(SELECT 1 FROM OPENJSON({token.JsonPath}) AS x WHERE JSON_VALUE(x.value, '$.{token.Field}') = CAST(v.val AS NVARCHAR))) = (SELECT COUNT(*) FROM (VALUES {valuesFormatted}) AS v(val))",
-            ArrayOperator.Exclude => 
-                $"(NOT EXISTS(SELECT 1 FROM (VALUES {valuesFormatted}) AS v(val) WHERE EXISTS(SELECT 1 FROM OPENJSON({token.JsonPath}) AS x WHERE JSON_VALUE(x.value, '$.{token.Field}') = CAST(v.val AS NVARCHAR))) OR (SELECT COUNT(*) FROM OPENJSON({token.JsonPath})) = 0)",
+            ArrayOperator.Include =>
+                $"(SELECT COUNT(*) FROM (VALUES {valueRows}) AS v(val) WHERE EXISTS(SELECT 1 FROM OPENJSON({col:raw}) AS x WHERE JSON_VALUE(x.value, '$.{jsonField:raw}') = CAST(v.val AS NVARCHAR))) = (SELECT COUNT(*) FROM (VALUES {valueRows}) AS v(val))",
+            ArrayOperator.Exclude =>
+                $"(NOT EXISTS(SELECT 1 FROM (VALUES {valueRows}) AS v(val) WHERE EXISTS(SELECT 1 FROM OPENJSON({col:raw}) AS x WHERE JSON_VALUE(x.value, '$.{jsonField:raw}') = CAST(v.val AS NVARCHAR))) OR (SELECT COUNT(*) FROM OPENJSON({col:raw})) = 0)",
             _ => throw new NotSupportedException($"Unsupported array operator: {token.Operator}")
         };
 
         if (token.IsNegated)
         {
-            result.Builder += $"NOT ({filterSql:raw})";
+            result.Builder += $"NOT ({filterSql})";
         }
         else
         {
-            result.Builder += $"{filterSql:raw}";
+            result.Builder += $"{filterSql}";
         }
     }
 
