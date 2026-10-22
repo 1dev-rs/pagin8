@@ -287,23 +287,28 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
 
         var (startDate, endDate) = dateProcessor.GetStartAndEndOfRelativeDate(currentDate, token.Value, token.Range, goBackwards, token.Exact, token.Strict);
 
+        // DateOnly properties have no time part, so the range is compared on whole days
+        var isDateOnly = propertyOrField.Type.IsDateOnly();
+        object start = isDateOnly ? DateOnly.FromDateTime(startDate) : startDate;
+        object end = isDateOnly ? DateOnly.FromDateTime(endDate) : endDate;
+
         Expression combinedExpression;
         if (!token.IsNegated)
         {
             // BETWEEN
-            var greaterThanOrEqual = CreateBinary(propertyOrField, startDate, Expression.GreaterThanOrEqual);
-            var lessThanOrEqual = CreateBinary(propertyOrField, endDate, Expression.LessThanOrEqual);
+            var greaterThanOrEqual = CreateBinary(propertyOrField, start, Expression.GreaterThanOrEqual);
+            var lessThanOrEqual = CreateBinary(propertyOrField, end, Expression.LessThanOrEqual);
             combinedExpression = Expression.AndAlso(greaterThanOrEqual, lessThanOrEqual);
         }
         else
         {
             // NOT BETWEEN
-            var lessThan = CreateBinary(propertyOrField, startDate, Expression.LessThan);
-            var greaterThan = CreateBinary(propertyOrField, endDate, Expression.GreaterThan);
+            var lessThan = CreateBinary(propertyOrField, start, Expression.LessThan);
+            var greaterThan = CreateBinary(propertyOrField, end, Expression.GreaterThan);
             Expression mainExpression = Expression.OrElse(lessThan, greaterThan);
 
             // Handle nulls
-            Expression checkForNull = Expression.Equal(propertyOrField, Expression.Constant(null, propertyOrField.Type));
+            var checkForNull = IsNullExpression(propertyOrField);
             combinedExpression = Expression.OrElse(mainExpression, checkForNull);
         }
 
@@ -335,7 +340,7 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
 
         if (token.IsEmptyQuery)
         {
-            var nullCheck = Expression.Equal(property, Expression.Constant(null, property.Type));
+            var nullCheck = IsNullExpression(property);
 
             if (property.Type == typeof(string))
             {
@@ -474,10 +479,9 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
         if (token.SortExpressions.Count == 0) return queryable;
 
         var firstExpression = token.SortExpressions[0];
-        var parameter = Expression.Parameter(typeof(T), "x");
         var firstLambda = Expression.Lambda<Func<T, object>>(
             Expression.Convert(GetPropertyExpression(firstExpression.Field), typeof(object)),
-            parameter);
+            _parameter);
 
         queryable = firstExpression.SortOrder == SortOrder.Ascending
             ? queryable.OrderBy(firstLambda)
@@ -488,7 +492,7 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
             var expression = token.SortExpressions[index];
             var lambda = Expression.Lambda<Func<T, object>>(
                 Expression.Convert(GetPropertyExpression(expression.Field), typeof(object)),
-                parameter);
+                _parameter);
 
             queryable = expression.SortOrder == SortOrder.Ascending
                 ? ((IOrderedQueryable<T>)queryable).ThenBy(lambda) :
@@ -581,12 +585,35 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
             return Convert.ToDecimal(value, CultureInfo.InvariantCulture);
         }
 
+        if (actualType == typeof(DateOnly))
+        {
+            return ToDateOnly(value);
+        }
+
         return Convert.ChangeType(value, actualType, CultureInfo.InvariantCulture);
+    }
+
+    // Non-nullable value types (DateTime, DateOnly, int...) can never be null, and Expression.Constant(null, type) throws for them
+    private static Expression IsNullExpression(Expression property)
+    {
+        return property.Type.IsValueType && !property.Type.IsNullable()
+            ? Expression.Constant(false)
+            : Expression.Equal(property, Expression.Constant(null, property.Type));
+    }
+
+    private static DateOnly ToDateOnly(object value)
+    {
+        return value switch
+        {
+            DateOnly dateOnly => dateOnly,
+            DateTime dateTime => DateOnly.FromDateTime(dateTime),
+            _ => DateOnly.FromDateTime(Convert.ToDateTime(value, CultureInfo.InvariantCulture))
+        };
     }
 
     private static IQueryable<T> ProcessArrayOperation(ArrayOperationToken token, IQueryable<T> queryable, PropertyInfo propertyInfo, Type elementType)
     {
-        var values = token.Values.Select(v => Convert.ChangeType(v, elementType)).ToList();
+        var values = token.Values.Select(v => elementType == typeof(DateOnly) ? ToDateOnly(v) : Convert.ChangeType(v, elementType)).ToList();
         if (values.Count == 0)
             return queryable; // or throw?
 
@@ -662,7 +689,9 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
             ? Nullable.GetUnderlyingType(propType)!
             : propType;
 
-        var convertedValue = Convert.ChangeType(token.Value, underlyingType, CultureInfo.InvariantCulture);
+        var convertedValue = underlyingType == typeof(DateOnly)
+            ? ToDateOnly(token.Value)
+            : Convert.ChangeType(token.Value, underlyingType, CultureInfo.InvariantCulture);
         var right = Expression.Constant(convertedValue, propType);
         var isText = underlyingType == typeof(string);
 
@@ -676,7 +705,7 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
 
         if (token.IsEmptyQuery)
         {
-            var nullCheck = Expression.Equal(propAccess, Expression.Constant(null, propAccess.Type));
+            var nullCheck = IsNullExpression(propAccess);
             if (propAccess.Type == typeof(string))
             {
                 var emptyCheck = Expression.Equal(propAccess, Expression.Constant(string.Empty));
@@ -703,7 +732,9 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
             : propType;
 
         var rawValues = token.Values.Trim('(', ')').Split(',');
-        var converted = rawValues.Select(v => Convert.ChangeType(v.Trim(), underlyingType, CultureInfo.InvariantCulture)).ToArray();
+        var converted = rawValues.Select(v => underlyingType == typeof(DateOnly)
+            ? ToDateOnly(v.Trim())
+            : Convert.ChangeType(v.Trim(), underlyingType, CultureInfo.InvariantCulture)).ToArray();
         var array = Array.CreateInstance(underlyingType, converted.Length);
         Array.Copy(converted, array, converted.Length);
 

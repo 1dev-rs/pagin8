@@ -7,6 +7,18 @@ internal static class TypeExtensions
         return Nullable.GetUnderlyingType(type) != null;
     }
 
+    public static bool IsDateOnly(this Type type)
+    {
+        return (Nullable.GetUnderlyingType(type) ?? type) == typeof(DateOnly);
+    }
+
+    // DateOnly has no TypeCode of its own (Type.GetTypeCode returns Object), so it is reported as DateTime
+    // to reuse all date handling (validation, parsing, DATE() comparison, coalesce, meta type).
+    public static TypeCode GetPagin8TypeCode(this Type type)
+    {
+        return type == typeof(DateOnly) ? TypeCode.DateTime : Type.GetTypeCode(type);
+    }
+
     public static bool IsNumericType(this Type type)
     {
         if (type.IsEnum) return false;

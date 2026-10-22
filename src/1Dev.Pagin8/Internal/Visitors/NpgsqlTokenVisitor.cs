@@ -186,8 +186,8 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
     {
         var (procType, innerType) = DetermineProcessingType(typeof(T), token.JsonPath);
         var typeCode = GetTypeCodeForProperty(innerType, token.Field);
-        var columnName = GetColumnInfo<T>(token.Field).Name;
-        var formattedName = TryFormatColumnName(columnName);
+        var columnInfo = GetColumnInfo<T>(token.Field);
+        var formattedName = TryFormatColumnName(columnInfo.Name);
         var leftHandSide = GetLeftHandSideExpression(procType, formattedName, token.JsonPath, typeCode);
 
         var currentDate = DateTime.Now;
@@ -195,6 +195,13 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         var goBackwards = token.Operator is DateRangeOperator.Ago;
 
         var (startDate, endDate) = dateProcessor.GetStartAndEndOfRelativeDate(currentDate, token.Value, token.Range, goBackwards, token.Exact, token.Strict);
+
+        // DateOnly columns have no time part, so the range is compared on whole days
+        if (columnInfo.Type.IsDateOnly())
+        {
+            startDate = startDate.Date;
+            endDate = endDate.Date;
+        }
 
         var query =
             (FormattableString)

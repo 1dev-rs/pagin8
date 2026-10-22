@@ -22,6 +22,8 @@ public class FilterProvider : IFilterProvider
 
     private static readonly ConcurrentDictionary<Type, IReadOnlyList<(PropertyInfo Property, string Func)>> AggregateColumnsCache = new();
 
+    static FilterProvider() => DateOnlyTypeHandler.EnsureRegistered();
+
     private static IReadOnlyList<(PropertyInfo Property, string Func)> GetAggregateColumns(Type type)
         => AggregateColumnsCache.GetOrAdd(type, static t =>
             t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)

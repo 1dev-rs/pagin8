@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using System.Text.Json;
+using _1Dev.Pagin8.Extensions;
 using _1Dev.Pagin8.Internal.Attributes;
 using _1Dev.Pagin8.Internal.Utils;
 using Tar.Rest.LibShared.Internal.Exceptions;
@@ -13,6 +14,8 @@ public class MetadataProvider : IMetadataProvider
     private const string NoFilterFlag = "no-filter";
     private const string NoSortFlag = "no-sort";
     private const string ArrayFlag = "array";
+    // DateOnly is reported with Type "DateTime" (backward compatible); this flag tells clients there is no time part
+    private const string DateOnlyFlag = "date-only";
     private const int MaxSerializationDepth = 1;
 
     // Shared across all instances — entity types and their attributes never change at runtime.
@@ -59,8 +62,13 @@ public class MetadataProvider : IMetadataProvider
         var arrayInnerType = GetIEnumerableElementType(propertyType);
 
         var effectiveType = arrayInnerType ?? propertyType;
-        var typeCode = Type.GetTypeCode(effectiveType);
+        var typeCode = effectiveType.GetPagin8TypeCode();
         var typeStr = GetTypeString(typeCode);
+
+        if (effectiveType.IsDateOnly())
+        {
+            flags.Add(DateOnlyFlag);
+        }
 
         if (arrayInnerType != null)
         {
@@ -147,7 +155,7 @@ public class MetadataProvider : IMetadataProvider
                 var property = GetCachedProperty(key.Type, key.Name);
                 Guard.AgainstNull(property);
                 var propertyType = Nullable.GetUnderlyingType(property!.PropertyType) ?? property.PropertyType;
-                return Type.GetTypeCode(propertyType);
+                return propertyType.GetPagin8TypeCode();
             });
 
     public bool IsFieldFilterable(Type entityType, string propertyName)
