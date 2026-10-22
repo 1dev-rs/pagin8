@@ -1,6 +1,6 @@
 ﻿# Pagin8
 
-**PostgREST-inspired filtering & pagination for .NET + PostgreSQL**
+**PostgREST-inspired filtering & pagination for .NET + PostgreSQL / SQL Server**
 
 Pagin8 is a C# library that provides a simple and powerful way to build SQL queries with filtering, sorting, and pagination. The URL-based filtering syntax is inspired by PostgREST, making it intuitive and expressive for building RESTful APIs.
 
@@ -23,6 +23,10 @@ Pagin8 is a C# library that provides a simple and powerful way to build SQL quer
 - [Query Examples](#querying-syntax) - Real-world filtering
 - [All Operators](#supported-operators) - Complete reference
 - [Pagination](#paging-operator-for-pagination) - Cursor-based paging
+- [Dates](#working-with-dates) - Date formats, `DateOnly`, JSON dates
+- [Error Handling](#-error-handling) - Mapping invalid queries to `400`
+- [In-Memory Filtering](#-in-memory-filtering-linq) - LINQ mode and its limits
+- [Changelog](CHANGELOG.md) - Release notes and upgrade notes
 
 ---
 
@@ -115,6 +119,10 @@ Pagin8 support a wide range of operators for comparing values and constructing c
 -   `not`: Logical NOT ( `not.in` )
 -   `incl`: Includes all values
 -   `excl`: Exclude all values
+
+`incl`/`excl` values are converted to the property's element type and always sent as SQL parameters, so values may safely contain quotes or other special characters (`tags=incl(O'Brien)`). A value that cannot be converted, such as `ids=incl(abc)` on a `List<int>`, is rejected with `Pagin8_InvalidArrayValue`.
+
+Supported element types: `string`, `int`, `long`, `short`, `decimal`, `double`, `float`, `bool`, `Guid`, `DateTime` and `DateOnly`, including their nullable variants.
 
 ### Boolean Operators
 
@@ -210,6 +218,17 @@ Example:
   - `type:object` + `flags: [array]` = **array of complex objects** (`GetTagInfo[]` in case of `userTags`)
   - `type:object` + `flags: []` = **single complex object** (`Contact` i.e.`)
 
+All flags that can appear in column metadata:
+
+| Flag | Meaning |
+|---|---|
+| `no-filter` | The column cannot be filtered (`[NonFilterable]`). |
+| `no-sort` | The column cannot be used in `sort(...)` (`[NonSortable]`). |
+| `array` | The column is a collection. `type` is the element type. |
+| `date-only` | The column is a `DateOnly`. `type` stays `DateTime` for backward compatibility, but the value has no time part, so clients should use a date-only picker. |
+
+Collections of simple values report their element type and have no `properties`. For example, a `List<DateOnly?>` is reported as `type: "DateTime"` with flags `["array", "date-only"]`.
+
 
 
 ### Unwrapping and Inner Conditions
@@ -238,9 +257,17 @@ To filter `userTags` based on included and excluded values:
 
 This filters `userTags` to include values where `name` is both `test1` and `test2`, excluding values where `name` is either `test3` or `test4`.
 
-Note that if you want to filter out some special character, like `#`, it must be decoded and sent like `%23`:
+Note that if you want to filter by a special character, like `#`, it must be URL-encoded and sent as `%23`:
 
 `userTags.with=(colorCode.incl(%23FF0000))`
+
+### Validation of Inner Fields
+
+Inner fields are validated against the nested type, the same way top-level fields are validated against the entity:
+
+- A field that does not exist on the nested type is rejected with `Pagin8_TokenFieldInvalid`.
+- A nested property marked with `[NonFilterable]` cannot be filtered.
+- Only filter conditions are allowed inside `with=(...)` (and inside `and`/`or` groups). Top-level operations such as `paging`, `select` and `metaInclude` are rejected with `Pagin8_RootLevelOperation`, and `sort(...)` or `limit.N` with `Pagin8_NestedLevelOperation`.
 
 ## Date Range Operator
 
@@ -274,6 +301,34 @@ The calculation includes the first moment of the previous day, week, month, or y
 | for.1me   | Range of one month forward (exact)       | createdDate=for.1me    |
 | for.1ye   | Range of one year forward (exact)        | createdDate=for.1ye    |
 
+## Working with Dates
+
+### Date Value Format
+
+Date values in `eq`, `gt`, `lt`, `gte`, `lte` and `in` accept these formats:
+
+| Format | Example |
+|---|---|
+| `yyyy-MM-dd` | `createdAt=gte.2024-01-15` |
+| `yyyy-MM-ddTHH:mm:ss` | `createdAt=gte.2024-01-15T10:30:00` |
+| `yyyy-MM-ddTHH:mm:ss.fff` | `createdAt=gte.2024-01-15T10:30:00.250` |
+
+- Values are used as-is, without time zone conversion. Time zone suffixes such as `Z` or `+02:00` are not accepted and are rejected with `Pagin8_InvalidComparison`.
+- Comparison operators compare the **date part only** (`DATE(...)` on PostgreSQL, `CAST(... AS DATE)` on SQL Server). For example, `createdAt=eq.2024-01-15` matches every row from that day.
+- `in` compares the full value, including the time.
+- SQL and LINQ (in-memory) mode accept exactly the same formats.
+
+### `DateOnly` Properties
+
+`DateOnly` and `DateOnly?` properties work everywhere a `DateTime` does: comparison operators, `in`, `is`, `ago`/`for`, sorting, cursor paging, nested filters and `incl`/`excl`. There is no need to expose a `DateTime` just for filtering.
+
+- `ago` and `for` use whole days on `DateOnly` properties. For example, `dueDate=for.3d` covers today through three days from now, today included.
+- In column metadata, a `DateOnly` property has `type: "DateTime"` and the `date-only` flag (see [Columns meta](#columns-meta)).
+- The Backend `FilterProvider` registers a Dapper type handler, so `date` columns map to `DateOnly` properties. If your application already registers its own `SqlMapper.TypeHandler<DateOnly>`, it is kept.
+
+### Dates Inside JSON (Nested) Fields
+
+JSON stores dates as text, so nested date fields are converted before they are compared: PostgreSQL casts them with `::timestamp`, and SQL Server uses `TRY_CONVERT(DATETIME2, ...)`. Store JSON dates as ISO 8601 strings. On PostgreSQL, a value that is not a valid timestamp (including an empty string) makes the query fail. On SQL Server such a value simply does not match.
 
 ## Paging Operator for Pagination
 
@@ -485,6 +540,7 @@ When `metaInclude=columns` token is provided, a full column metadata response is
         { "name": "email", "type": "string" },
         { "name": "status", "type": "string" },
         { "name": "createdAt", "type": "DateTime" },
+        { "name": "releaseDate", "type": "DateTime", "flags": ["date-only"] },
         { "name": "price", "type": "decimal" }
       ],
       "hash": "E5F6G7H8"
@@ -495,6 +551,42 @@ When `metaInclude=columns` token is provided, a full column metadata response is
 ---
 
 **💡 Use Case:** Build smart frontends that cache metadata and only refresh when hash changes.
+
+## ❗ Error Handling
+
+Every error caused by the query string (an unknown field, a malformed expression, a value of the wrong type, a disallowed operation) is thrown as `Pagin8Exception`. Its `Code` property holds a stable identifier, so it is safe to map the exception to `400 Bad Request` and send the code to the client. Any other exception type indicates a configuration or server problem, not a bad request.
+
+| Code | When |
+|---|---|
+| `Pagin8_MalformedQuery` | A part of the query string is not valid Pagin8 syntax. |
+| `Pagin8_TokenFieldInvalid` | A field does not exist, or cannot be filtered, sorted or selected. |
+| `Pagin8_InvalidComparison` | A value cannot be converted to the property type (e.g. `age=gt.abc`, an unsupported date format). |
+| `Pagin8_UnsupportedComparison` | The operator cannot be used with this property type (e.g. `cs` on a number). |
+| `Pagin8_InvalidArrayValue` | An `incl`/`excl` value cannot be converted to the element type. |
+| `Pagin8_RootLevelOperation` / `Pagin8_NestedLevelOperation` | An operation is used where it is not allowed (e.g. `paging` or `limit` inside `with=(...)` or a group). |
+| `Pagin8_ColumnNotSortable` | The column cannot be sorted. |
+| `Pagin8_InvalidLimit` / `Pagin8_ExceededMaxItems` | `limit` is not positive or exceeds `MaxItemsPerPage`. |
+| `Pagin8_ExceededNesting` | Groups are nested deeper than `MaxNestingLevel`. |
+
+All codes are defined in `Pagin8StatusCode` (`_1Dev.Pagin8.Internal.Exceptions.StatusCodes`).
+
+```csharp
+using _1Dev.Pagin8.Internal.Exceptions.Base;
+using Microsoft.AspNetCore.Diagnostics;
+
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    var error = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+    if (error is Pagin8Exception pagin8)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new { code = pagin8.Code });
+        return;
+    }
+
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+}));
+```
 
 
 ## 📦 Installation
@@ -734,6 +826,8 @@ var aggregates = await _filterProvider.GetAggregatesAsync<OrderDto>("vw_orders",
 
 The aggregate keys follow the camelCase naming convention: `{fieldName}{AggregateType}` (e.g., `priceSum`, `stockMin`).
 
+Results are returned as `decimal`, and `NULL` results are returned as `0`. Therefore `Sum`, `Avg`, `Min` and `Max` require a numeric property; `Count` works on any property. Using `Sum`/`Avg`/`Min`/`Max` on a non-numeric property (for example a date) throws an `InvalidOperationException` that names the property, the first time aggregates are requested for that type.
+
 ---
 
 #### Custom Connection Factory
@@ -876,8 +970,31 @@ public class ReportRepository : FilteredRepositoryBase<ReportDto>
 | Connection factory | `IDbConnectionFactory` / `NpgsqlConnectionFactory` | `ISqlServerDbConnectionFactory` / `SqlServerConnectionFactory` |
 | Filter provider | `IFilterProvider` | `ISqlServerFilterProvider` |
 | DI method | `AddPagin8Backend()` | `AddPagin8BackendSqlServer()` |
+| `incl`/`excl` on a collection column | Native arrays (`@>`, `&&`) | Comma-separated text (`STRING_SPLIT`); values are compared as invariant text (`yyyy-MM-dd` for dates, `true`/`false` for booleans) |
+| Dates in JSON fields | Cast with `::timestamp` | Converted with `TRY_CONVERT(DATETIME2, ...)` |
+| `NULL` fallback when sorting nullable dates | `DateTime.MinValue` | `1753-01-01` (the minimum of SQL `datetime`) |
 
 ---
+
+## 🧮 In-Memory Filtering (LINQ)
+
+The same filter syntax can be applied to an in-memory collection with `IQueryableTokenProcessor<T>`, which `AddPagin8()` registers:
+
+```csharp
+using _1Dev.Pagin8;
+
+public class ProductCatalog(IQueryableTokenProcessor<ProductDto> processor)
+{
+    public List<ProductDto> Filter(IEnumerable<ProductDto> products, string query)
+        => processor.Process(query, products).ToList();
+}
+
+// catalog.Filter(products, "price=gte.500&or=(category.eq.laptops,category.eq.tablets)")
+```
+
+LINQ mode applies **filters only**: comparison and string operators, `and`/`or`/`not` groups, `in`, `is`, `ago`/`for`, `incl`/`excl` and nested `with=(...)` filters.
+
+> **Not applied in LINQ mode:** `paging` (sort, limit, cursor and count) and `select` are accepted but ignored. `Process` returns every matching item in the source order, and each item keeps all of its properties. Apply ordering and paging yourself, for example `processor.Process(query, items).OrderBy(x => x.Name).Take(20)`.
 
 ## 🔍 Diagnostics & Query Logging
 
