@@ -32,7 +32,10 @@ public class GroupTokenizationStrategy(ITokenizer tokenizer) : ITokenizationStra
 
         var innerNesting = nestingLevel + 1;
 
-        var groupToken = new GroupToken(@operator.GetNestingOperator(), tokenizer.Tokenize(innerGroup, innerNesting), nestingLevel, isNegated, comment);
+        var innerTokens = tokenizer.Tokenize(innerGroup, innerNesting);
+        TokenValidator.ValidateOnlyFilterTokens(innerTokens);
+
+        var groupToken = new GroupToken(@operator.GetNestingOperator(), innerTokens, nestingLevel, isNegated, comment);
 
         return [groupToken];
     }

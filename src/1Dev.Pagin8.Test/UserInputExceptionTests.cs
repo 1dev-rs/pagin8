@@ -31,6 +31,10 @@ public abstract class UserInputExceptionTestsBase
     [InlineData("id=eq.abc")]
     [InlineData("child.with=(amount.gt.abc)")]
     [InlineData("child.with=(paging=(limit.5))")]
+    [InlineData("child.with=(sort(id.asc))")]
+    [InlineData("child.with=(name.eq.a,limit.5)")]
+    [InlineData("and=(id.eq.1,limit.5)")]
+    [InlineData("or=(id.eq.1,sort(id.asc))")]
     [InlineData("paging=(sort(reference.asc))")]
     public void InvalidInput_ThrowsPagin8Exception(string query)
     {

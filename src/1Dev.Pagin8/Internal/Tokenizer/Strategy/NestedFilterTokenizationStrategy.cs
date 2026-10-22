@@ -27,6 +27,7 @@ public class NestedFilterTokenizationStrategy(ITokenizer tokenizer) : ITokenizat
         var innerNesting = nestingLevel + 1;
 
         var innerTokens = tokenizer.Tokenize(conditions, innerNesting);
+        TokenValidator.ValidateOnlyFilterTokens(innerTokens);
 
         foreach (var innerToken in innerTokens)
         {

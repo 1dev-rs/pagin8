@@ -22,6 +22,15 @@ public class TokenValidator
         }
     }
 
+    // Groups and nested filters become a WHERE condition, so sort/limit inside them would produce invalid SQL
+    public static void ValidateOnlyFilterTokens(IEnumerable<Tokenizer.Tokens.Token> tokens)
+    {
+        if (tokens.Any(t => t is not Tokenizer.Tokens.FilterToken))
+        {
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_NestedLevelOperation.Code);
+        }
+    }
+
     public static void ValidateMaxItemsPerPage(int maxPerPage)
     {
         if (maxPerPage > Pagin8Runtime.Config.PagingSettings.MaxItemsPerPage)
