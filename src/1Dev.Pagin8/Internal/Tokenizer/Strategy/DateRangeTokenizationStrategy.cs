@@ -46,6 +46,6 @@ public class DateRangeTokenizationStrategy : ITokenizationStrategy
 
     public List<Token> Tokenize(string query, string jsonPath, int nestingLevel = 1)
     {
-        throw new NotImplementedException();
+        throw new Pagin8Exception(Pagin8StatusCode.Pagin8_NestedLevelOperation.Code);
     }
 }

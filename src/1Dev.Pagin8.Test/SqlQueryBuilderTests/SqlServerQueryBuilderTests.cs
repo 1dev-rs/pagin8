@@ -374,6 +374,6 @@ public class SqlServerQueryBuilderTests
 
         Action act = () => _sut.BuildSqlQuery<TestEntity>(parameters);
 
-        act.Should().Throw<ArgumentException>();
+        act.Should().Throw<_1Dev.Pagin8.Internal.Exceptions.Base.Pagin8Exception>();
     }
 }

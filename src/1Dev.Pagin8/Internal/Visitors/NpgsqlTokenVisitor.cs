@@ -16,6 +16,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -492,6 +493,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             case TypeCode.Int64:
             case TypeCode.UInt64:
             case TypeCode.Double:
+            case TypeCode.Single:
             case TypeCode.Decimal:
                 return -1;
             case TypeCode.DateTime:
@@ -499,7 +501,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             case TypeCode.Boolean:
                 return false;
             default:
-                throw new NotSupportedException($"Coalesce fallback value does not exist for type code: {typeCode}");
+                throw new Pagin8Exception(Pagin8StatusCode.Pagin8_ColumnNotSortable.Code, $"Sorting nullable columns is not supported for type code: {typeCode}");
         }
     }
 
@@ -699,15 +701,15 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         return typeCode switch
         {
             TypeCode.String => QueryBuilderHelper.MapComparisonToNpgsqlString(comparison, value, isTranslit, isSort),
-            TypeCode.DateTime => TryParseExactLocalDate(value, out var date)? date : throw new ArgumentException($"Invalid date format '{value}'. Expected yyyy-MM-dd or ISO-8601."),
-            TypeCode.Int16 => short.TryParse(value, out var shortValue) ? shortValue : throw new ArgumentException($"Cannot format value {value} as Int16"),
-            TypeCode.Int32 => int.TryParse(value, out var intValue) ? intValue : throw new ArgumentException($"Cannot format value {value} as Int32"),
-            TypeCode.Int64 => long.TryParse(value, out var longValue) ? longValue : throw new ArgumentException($"Cannot format value {value} as Int64"),
-            TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
-            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
-            TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToLowerBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
-            TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
-            _ => throw new ArgumentException($"Cannot format values for TypeCode {typeCode}")
+            TypeCode.DateTime => TryParseExactLocalDate(value, out var date)? date : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Invalid date format '{value}'. Expected yyyy-MM-dd or ISO-8601."),
+            TypeCode.Int16 => short.TryParse(value, out var shortValue) ? shortValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int16"),
+            TypeCode.Int32 => int.TryParse(value, out var intValue) ? intValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int32"),
+            TypeCode.Int64 => long.TryParse(value, out var longValue) ? longValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int64"),
+            TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? doubleValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Double"),
+            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? boolValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Boolean"),
+            TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToLowerBoldLatin(charValue.ToString()) : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Char"),
+            TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? decimalValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Decimal"),
+            _ => throw new Pagin8Exception(Pagin8StatusCode.Pagin8_UnsupportedComparison.Code, $"Cannot format values for TypeCode {typeCode}")
         };
     }
 
@@ -749,15 +751,15 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
         return typeCode switch
         {
             TypeCode.String => GetColumnInfo<T>(field, useTranslit: false).SkipCursorTransliteration ? value : Transliteration.CyrlToLatin(value),
-            TypeCode.DateTime => DateTime.TryParse(value, out var date) ? (DateTime?)date : throw new ArgumentException($"Cannot format value {value} as DateTime"),
-            TypeCode.Int16 => short.TryParse(value, out var shortValue) ? (short?)shortValue : throw new ArgumentException($"Cannot format value {value} as Int16"),
-            TypeCode.Int32 => int.TryParse(value, out var intValue) ? (int?)intValue : throw new ArgumentException($"Cannot format value {value} as Int32"),
-            TypeCode.Int64 => long.TryParse(value, out var longValue) ? (long?)longValue : throw new ArgumentException($"Cannot format value {value} as Int64"),
-            TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? (double?)doubleValue : throw new ArgumentException($"Cannot format value {value} as Double"),
-            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (bool?)boolValue : throw new ArgumentException($"Cannot format value {value} as Boolean"),
-            TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToBoldLatin(charValue.ToString()) : throw new ArgumentException($"Cannot format value {value} as Char"),
-            TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? (decimal?)decimalValue : throw new ArgumentException($"Cannot format value {value} as Decimal"),
-            _ => throw new ArgumentException($"Cannot format values for TypeCode {typeCode}")
+            TypeCode.DateTime => DateTime.TryParse(value, out var date) ? (DateTime?)date : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as DateTime"),
+            TypeCode.Int16 => short.TryParse(value, out var shortValue) ? (short?)shortValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int16"),
+            TypeCode.Int32 => int.TryParse(value, out var intValue) ? (int?)intValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int32"),
+            TypeCode.Int64 => long.TryParse(value, out var longValue) ? (long?)longValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int64"),
+            TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? (double?)doubleValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Double"),
+            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (bool?)boolValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Boolean"),
+            TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToBoldLatin(charValue.ToString()) : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Char"),
+            TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? (decimal?)decimalValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Decimal"),
+            _ => throw new Pagin8Exception(Pagin8StatusCode.Pagin8_UnsupportedComparison.Code, $"Cannot format values for TypeCode {typeCode}")
         };
     }
 
@@ -1011,7 +1013,17 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
             return method.MakeGenericMethod(k.EntityType);
         });
 
-        var invokeResult = genericMethod.Invoke(this, [token, result]);
+        object? invokeResult;
+        try
+        {
+            invokeResult = genericMethod.Invoke(this, [token, result]);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            // Rethrow the visitor's own exception (e.g. Pagin8Exception) instead of the reflection wrapper
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
         if (invokeResult is not QueryBuilderResult)
         {
             throw new InvalidOperationException("The invoked Visit method returned null or an unexpected type.");

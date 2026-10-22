@@ -1,4 +1,6 @@
-﻿using _1Dev.Pagin8.Internal.Helpers;
+﻿using _1Dev.Pagin8.Internal.Exceptions.StatusCodes;
+using _1Dev.Pagin8.Internal.Exceptions.Base;
+using _1Dev.Pagin8.Internal.Helpers;
 using _1Dev.Pagin8.Internal.Tokenizer.Contracts;
 
 namespace _1Dev.Pagin8.Internal.Tokenizer.Strategy;
@@ -27,6 +29,6 @@ public abstract class TokenizationStrategyFactory
 
     public static TokenizationStrategyFactory GetFactory(string query)
     {
-        return FactoryRegistry.FirstOrDefault(kv => kv.Key(query)).Value ?? throw new NotSupportedException($"Provided format doesn't match with any tokenization factory: {query}");
+        return FactoryRegistry.FirstOrDefault(kv => kv.Key(query)).Value ?? throw new Pagin8Exception(Pagin8StatusCode.Pagin8_MalformedQuery.Code, $"Provided format doesn't match with any tokenization factory: {query}");
     }
 }

@@ -200,7 +200,7 @@ public class DateOnlyPostgreSqlTests
     {
         var act = () => _sut.BuildSqlQuery<TestDateOnlyEntity>(DateOnlyTestHelper.Build("birthDate=eq.not-a-date"));
 
-        act.Should().Throw<ArgumentException>();
+        act.Should().Throw<_1Dev.Pagin8.Internal.Exceptions.Base.Pagin8Exception>();
     }
 }
 

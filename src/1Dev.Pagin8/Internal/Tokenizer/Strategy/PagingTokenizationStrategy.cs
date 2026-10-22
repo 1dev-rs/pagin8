@@ -49,7 +49,7 @@ public class PagingTokenizationStrategy(ITokenizer tokenizer) : ITokenizationStr
 
     public List<Token> Tokenize(string query, string jsonPath, int nestingLevel = 1)
     {
-        throw new NotImplementedException();
+        throw new Pagin8Exception(Pagin8StatusCode.Pagin8_NestedLevelOperation.Code);
     }
 
     private static bool TryGetInnerGroup(string query, [NotNullWhen(true)] out string? innerGroup)
