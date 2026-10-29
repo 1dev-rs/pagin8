@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- LINQ mode: `is.true` / `is.false` on `bool?` properties threw `InvalidOperationException` ("The binary operator Equal is not defined for the types Nullable<Boolean> and Boolean"). Applies to top-level and nested filters. `null` values follow SQL semantics: they do not match `is.true` / `is.false`, and they match `not.is.true` / `not.is.false`.
+
 ## [1.6.0-alpha] - 2026-10-22
 
 ### Upgrade notes

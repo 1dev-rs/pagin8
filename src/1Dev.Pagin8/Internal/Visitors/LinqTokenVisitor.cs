@@ -369,7 +369,7 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
         else
         {
             var value = bool.Parse(token.Value);
-            var valueCheck = Expression.Equal(property, Expression.Constant(value));
+            var valueCheck = Expression.Equal(property, Expression.Constant(value, property.Type));
 
             body = valueCheck;
         }
@@ -732,7 +732,7 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
         }
 
         var value = bool.Parse(token.Value);
-        var valueCheck = Expression.Equal(propAccess, Expression.Constant(value));
+        var valueCheck = Expression.Equal(propAccess, Expression.Constant(value, propAccess.Type));
         return token.IsNegated ? Expression.Not(valueCheck) : valueCheck;
     }
 
