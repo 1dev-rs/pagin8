@@ -17,11 +17,13 @@ namespace _1Dev.Pagin8.Test.SqlQueryBuilderTests;
 
 public class CursorTransliterationTests
 {
+    private const string DottedBankName = "OTP Banka Srbija a.d. Novi Sad";
+
     public static IEnumerable<object[]> StringCursorCases() =>
         from database in new[] { DatabaseType.PostgreSql, DatabaseType.SqlServer }
         from field in new[] { "name", "label", "original", "searchable" }
         from direction in new[] { "asc", "desc" }
-        from cursor in new (string Original, string Latin)[] { ("Ана", "Ana"), ("Љиљана Petrović", "LJiljana Petrović"), ("Ana", "Ana"), ("", "") }
+        from cursor in new (string Original, string Latin)[] { ("Ана", "Ana"), ("Љиљана Petrović", "LJiljana Petrović"), ("Ana", "Ana"), (DottedBankName, DottedBankName), ("", "") }
         select new object[] { database, field, direction, cursor.Original, field is "original" or "searchable" ? cursor.Original : cursor.Latin };
 
     [Theory]
@@ -59,6 +61,19 @@ public class CursorTransliterationTests
         sql.Should().Contain($"ORDER BY {first} {firstDirection.ToUpperInvariant()},{second} {secondDirection.ToUpperInvariant()},id ASC");
         sql.Should().NotContain("_translit");
         Regex.Matches(sql, @"\b(?:label|searchable|id) (?:>|<|=) @p\d+").Should().HaveCount(6);
+    }
+
+    [Theory]
+    [InlineData(DatabaseType.PostgreSql)]
+    [InlineData(DatabaseType.SqlServer)]
+    public void CompositeCursor_ShouldPreserveDottedValueBeforeNextField(DatabaseType database)
+    {
+        var name = Uri.EscapeDataString(DottedBankName);
+        var result = BuildSqlQuery(database, $"paging=(sort(original.desc.{name},label.asc.Beograd,$key.42),limit.10)");
+
+        AssertCursorComparisons(result, "original", "desc", DottedBankName);
+        AssertCursorComparisons(result, "label", "asc", "Beograd");
+        result.Builder!.AsSql().Sql.Should().Contain("ORDER BY original DESC,label ASC,id ASC");
     }
 
     public static IEnumerable<object[]> SearchCases() =>

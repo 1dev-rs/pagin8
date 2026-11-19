@@ -73,7 +73,7 @@ public static class TokenHelper
 
     public static string SortExpressionPlainPattern => $@"(?<field>\$?\w+)\.(?<order>{EscJoin(EngineDefaults.Config.PossibleOrder)})";
 
-    public static string SortExpressionPagingPattern => $@"(?<field>\$?\w+)\.(?<order>{EscJoin(EngineDefaults.Config.PossibleOrder)})\.(?<lastValue>.*?)(?=(\.\w+\.)|(?:,\w+\.)|$)";
+    public static string SortExpressionPagingPattern => $@"(?<field>\$?\w+)\.(?<order>{EscJoin(EngineDefaults.Config.PossibleOrder)})\.(?<lastValue>.*?)(?=,\w+\.|$)";
 
     public static string PagingSectionPattern => @"paging=\((.*)\)";
 
