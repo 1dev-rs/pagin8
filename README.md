@@ -257,6 +257,8 @@ To filter `userTags` based on included and excluded values:
 
 This filters `userTags` to include values where `name` is both `test1` and `test2`, excluding values where `name` is either `test3` or `test4`.
 
+For nested enum fields, pass the numeric role value to `incl` or `excl`. In TDOPS, `1` means Cashier. Use `types.with=(type.incl(1))` to list people with the Cashier role, or `types.with=(type.excl(1))` to list people without it.
+
 Note that if you want to filter by a special character, like `#`, it must be URL-encoded and sent as `%23`:
 
 `userTags.with=(colorCode.incl(%23FF0000))`

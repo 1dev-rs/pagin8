@@ -21,6 +21,7 @@ internal static class ArrayValueConverter
 
         object? result = type switch
         {
+            _ when type.IsEnum => ParseEnumNumber(raw, type),
             _ when type == typeof(string) => Transliteration.CyrlToLatin(raw),
             _ when type == typeof(int) => int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : null,
             _ when type == typeof(long) => long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var l) ? l : null,
@@ -36,6 +37,18 @@ internal static class ArrayValueConverter
         };
 
         return result ?? throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidArrayValue.Code, $"Value '{raw}' is not a valid {type.Name}.");
+    }
+
+    private static object? ParseEnumNumber(string raw, Type enumType)
+    {
+        try
+        {
+            return System.Convert.ChangeType(raw, Enum.GetUnderlyingType(enumType), CultureInfo.InvariantCulture);
+        }
+        catch (Exception ex) when (ex is FormatException or OverflowException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
