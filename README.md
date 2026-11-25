@@ -881,6 +881,42 @@ public class ProductRepository : FilteredRepositoryBase<ProductDto>
 
 ---
 
+## 🦆 DuckDB Support
+
+Pagin8 can run the same filter syntax against [DuckDB](https://duckdb.org), in-process, for example over Parquet files. DuckDB accepts the PostgreSQL SQL pagin8 emits, so it is registered next to the PostgreSQL configuration and needs `DatabaseType.PostgreSql` (the default).
+
+```bash
+dotnet add package 1Dev.Pagin8.Extensions.Backend
+# DuckDB's native library: the Backend package references only the managed DuckDB.NET.Data
+dotnet add package DuckDB.NET.Data.Full
+```
+
+```csharp
+var duckDb = new DuckDBConnection("DataSource=:memory:");
+duckDb.Open();
+
+builder.Services.AddPagin8();
+builder.Services.AddPagin8BackendDuckDb(() => duckDb.Duplicate(), commandTimeout: 25);
+```
+
+```csharp
+public class ArchiveSearch(IDuckDbFilterProvider filterProvider)
+{
+    private const string View = "(SELECT * FROM read_parquet('/data/payment/*/*.parquet', hive_partitioning = true)) AS main";
+
+    public Task<PagedResults<PaymentDto>> SearchAsync(string queryString)
+        => filterProvider.GetAsync<PaymentDto>(View, FilteredDataQuery.Create(queryString));
+}
+```
+
+- `AddPagin8BackendDuckDb` takes a connection string (a new connection per query) or a function returning connections, e.g. `Duplicate()` of one open database, so settings and caches are shared.
+- DuckDB has no statement timeout: when `commandTimeout` runs out, the query is interrupted and a `TimeoutException` is thrown.
+- Differences handled by the provider: `@p0` parameter markers are rewritten to `$p0`, and text `in` / `not.in` become `OR`-ed / `AND`-ed comparisons, because DuckDB refuses `ILIKE ANY(ARRAY[...])`.
+- Covered by tests on DuckDB: flat models with every comparison, string, `in`, `is`, date and logical operator, sorting, keyset cursors and counts. Nested JSON filters (`with=(...)`, which emit `jsonb`), `incl`/`excl` and JSON results (`IsJson`) are PostgreSQL-specific and not tested on DuckDB.
+- Every command starts an `Activity` on the `ActivitySource` named `1Dev.Pagin8.DuckDb`, tagged with its SQL, for timing.
+
+---
+
 ## 🗄️ SQL Server Support
 
 Pagin8 supports SQL Server in addition to PostgreSQL. The same filtering syntax works across both databases — the library automatically uses `LIKE` instead of `ILIKE` for string operators when targeting SQL Server.

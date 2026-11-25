@@ -22,6 +22,8 @@
   <ItemGroup>
     <!-- Required Dependencies -->
     <PackageReference Include="Dapper" />
+    <!-- Managed only: the application adds DuckDB's native library (e.g. DuckDB.NET.Data.Full) -->
+    <PackageReference Include="DuckDB.NET.Data" />
     <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Npgsql" />

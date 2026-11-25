@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.6.4-alpha] - 2026-11-25
+
+### Added
+
+- DuckDB provider, next to PostgreSQL and SQL Server: `AddPagin8BackendDuckDb(...)` registers `IDuckDbFilterProvider` (and `IDuckDbSqlQueryBuilder`), which runs the same filter syntax against DuckDB, e.g. over Parquet files through a `read_parquet(...)` view. It needs `DatabaseType.PostgreSql`, because DuckDB runs the PostgreSQL SQL pagin8 emits; the only differences are handled by the provider: text `in` / `not.in` become `OR`-ed / `AND`-ed comparisons (DuckDB refuses `ILIKE ANY(ARRAY[...])`), and `@p0` parameter markers are rewritten to `$p0` when the command runs. A command timeout interrupts the query and throws `TimeoutException`, since DuckDB has no statement timeout. The Backend package references the managed `DuckDB.NET.Data` only; the application adds DuckDB's native library, e.g. `DuckDB.NET.Data.Full`. Nothing changes for PostgreSQL or SQL Server.
+
 ## [1.6.1-alpha] - 2026-10-29
 
 ### Fixed

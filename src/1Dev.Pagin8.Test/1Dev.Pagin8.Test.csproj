@@ -16,6 +16,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <!-- Integration test dependencies -->
     <PackageReference Include="Dapper" />
+    <PackageReference Include="DuckDB.NET.Data.Full" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Npgsql" />
     <!-- Testcontainers for Docker-based integration tests -->
