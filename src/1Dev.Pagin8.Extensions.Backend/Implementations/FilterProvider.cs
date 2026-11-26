@@ -92,7 +92,19 @@ public class FilterProvider : IFilterProvider
     /// <summary>
     /// Executes a filtered query and returns paged results.
     /// </summary>
-    public async Task<PagedResults<TResponse>> GetAsync<TResponse>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
+    public Task<PagedResults<TResponse>> GetAsync<TResponse>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
+        where TResponse : class
+        => GetAsync<TResponse>(viewName, query, CancellationToken.None, commandTimeout);
+
+    /// <summary>
+    /// Executes a filtered query and returns paged results; cancelling the token stops the query
+    /// on the database and throws <see cref="OperationCanceledException"/>.
+    /// </summary>
+    public Task<PagedResults<TResponse>> GetAsync<TResponse>(string viewName, FilteredDataQuery query, CancellationToken cancellationToken, int? commandTimeout = null)
+        where TResponse : class
+        => RunAsync(() => GetInternalAsync<TResponse>(viewName, query, commandTimeout, cancellationToken), cancellationToken);
+
+    private async Task<PagedResults<TResponse>> GetInternalAsync<TResponse>(string viewName, FilteredDataQuery query, int? commandTimeout, CancellationToken cancellationToken)
         where TResponse : class
     {
         var timeout = commandTimeout ?? _defaultCommandTimeout;
@@ -118,7 +130,7 @@ public class FilterProvider : IFilterProvider
         if (buildResult.Builder is null)
         {
             int? countOnly = buildResult.Meta.ShowCount
-                ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout)
+                ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout, cancellationToken)
                 : null;
             return new PagedResults<TResponse>
             {
@@ -128,9 +140,9 @@ public class FilterProvider : IFilterProvider
             };
         }
 
-        var data = await FetchDataAsync<TResponse>(buildResult.Builder, query, timeout);
+        var data = await FetchDataAsync<TResponse>(buildResult.Builder, query, timeout, cancellationToken);
         int? count = buildResult.Meta.ShowCount
-            ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout)
+            ? await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout, cancellationToken)
             : null;
 
         return new PagedResults<TResponse>
@@ -144,35 +156,46 @@ public class FilterProvider : IFilterProvider
     private async Task<IEnumerable<TResponse>> FetchDataAsync<TResponse>(
         InterpolatedSql.Dapper.SqlBuilders.QueryBuilder builder,
         FilteredDataQuery query,
-        int? timeout) where TResponse : class
+        int? timeout,
+        CancellationToken cancellationToken) where TResponse : class
     {
         if (query.IsJson)
         {
-            var json = await builder.QueryFirstOrDefaultAsync<string>(commandTimeout: timeout);
+            var json = await builder.QueryFirstOrDefaultAsync<string>(commandTimeout: timeout, cancellationToken: cancellationToken);
             return string.IsNullOrEmpty(json) || json == "[]"
                 ? []
                 : JsonSerializer.Deserialize<IEnumerable<TResponse>>(json, JsonOptions) ?? [];
         }
 
-        return await builder.QueryAsync<TResponse>(commandTimeout: timeout);
+        return await builder.QueryAsync<TResponse>(commandTimeout: timeout, cancellationToken: cancellationToken);
     }
 
     /// <summary>
     /// Gets the count of rows matching the filter.
     /// </summary>
-    public async Task<int> GetCountAsync<TResponse>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
+    public Task<int> GetCountAsync<TResponse>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
         where TResponse : class
-    {
-        var timeout = commandTimeout ?? _defaultCommandTimeout;
-        using var connection = _connectionFactory.Create();
-        return await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout);
-    }
+        => GetCountAsync<TResponse>(viewName, query, CancellationToken.None, commandTimeout);
+
+    /// <summary>
+    /// Gets the count of rows matching the filter; cancelling the token stops the query on the
+    /// database and throws <see cref="OperationCanceledException"/>.
+    /// </summary>
+    public Task<int> GetCountAsync<TResponse>(string viewName, FilteredDataQuery query, CancellationToken cancellationToken, int? commandTimeout = null)
+        where TResponse : class
+        => RunAsync(async () =>
+        {
+            var timeout = commandTimeout ?? _defaultCommandTimeout;
+            using var connection = _connectionFactory.Create();
+            return await GetCountInternalAsync<TResponse>(connection, viewName, query, timeout, cancellationToken);
+        }, cancellationToken);
 
     private async Task<int> GetCountInternalAsync<TResponse>(
         IDbConnection connection,
         string viewName,
         FilteredDataQuery query,
-        int? commandTimeout = null) where TResponse : class
+        int? commandTimeout,
+        CancellationToken cancellationToken) where TResponse : class
     {
         var inputParams = QueryInputParameters.Create(
             sql: viewName,
@@ -194,7 +217,7 @@ public class FilterProvider : IFilterProvider
         if (buildResult.Builder is null)
             return 0;
 
-        return await buildResult.Builder.ExecuteScalarAsync<int>(commandTimeout: commandTimeout);
+        return await buildResult.Builder.ExecuteScalarAsync<int>(commandTimeout: commandTimeout, cancellationToken: cancellationToken);
     }
 
     /// <summary>
@@ -206,7 +229,19 @@ public class FilterProvider : IFilterProvider
     /// <c>AggregateAttribute</c> and that exposes an <c>AggregateType</c> property is supported
     /// via a reflection fallback, preserving backward compatibility with convention-based usage.
     /// </remarks>
-    public async Task<IDictionary<string, decimal>> GetAggregatesAsync<T>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
+    public Task<IDictionary<string, decimal>> GetAggregatesAsync<T>(string viewName, FilteredDataQuery query, int? commandTimeout = null)
+        where T : class
+        => GetAggregatesAsync<T>(viewName, query, CancellationToken.None, commandTimeout);
+
+    /// <summary>
+    /// Gets aggregate values; cancelling the token stops the query on the database and throws
+    /// <see cref="OperationCanceledException"/>.
+    /// </summary>
+    public Task<IDictionary<string, decimal>> GetAggregatesAsync<T>(string viewName, FilteredDataQuery query, CancellationToken cancellationToken, int? commandTimeout = null)
+        where T : class
+        => RunAsync(() => GetAggregatesInternalAsync<T>(viewName, query, commandTimeout, cancellationToken), cancellationToken);
+
+    private async Task<IDictionary<string, decimal>> GetAggregatesInternalAsync<T>(string viewName, FilteredDataQuery query, int? commandTimeout, CancellationToken cancellationToken)
         where T : class
     {
         var columns = GetAggregateColumns(typeof(T));
@@ -246,12 +281,30 @@ public class FilterProvider : IFilterProvider
         if (buildResult.Builder is null)
             return new Dictionary<string, decimal>();
 
-        var rows = await buildResult.Builder.QueryAsync<dynamic>(commandTimeout: timeout);
+        var rows = await buildResult.Builder.QueryAsync<dynamic>(commandTimeout: timeout, cancellationToken: cancellationToken);
         var row = rows.FirstOrDefault();
         if (row is null) return new Dictionary<string, decimal>();
 
         return ((IDictionary<string, object>)row)
             .ToDictionary(kvp => kvp.Key, kvp => Convert.ToDecimal(kvp.Value ?? 0));
+    }
+
+    // Every provider reports a cancelled query the same way: SqlClient throws a SqlException
+    // ("Operation cancelled by user"), DuckDB its own OperationCanceledException, Npgsql one for
+    // the token. A timeout is not a cancellation and keeps its own exception.
+    private static async Task<TResult> RunAsync<TResult>(Func<Task<TResult>> run, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            return await run();
+        }
+        catch (Exception ex) when (cancellationToken.IsCancellationRequested
+                                   && !(ex is OperationCanceledException cancelled && cancelled.CancellationToken == cancellationToken))
+        {
+            throw new OperationCanceledException("The query was cancelled.", ex, cancellationToken);
+        }
     }
 
     private static FormattableString GetBaseQuery(string viewName)

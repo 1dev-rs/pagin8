@@ -922,10 +922,53 @@ public class ArchiveSearch(IDuckDbFilterProvider filterProvider)
 ```
 
 - `AddPagin8BackendDuckDb` takes a connection string (a new connection per query) or a function returning connections, e.g. `Duplicate()` of one open database, so settings and caches are shared.
+- When the database is held by a service of the application, take the connection and the options from the service provider:
+
+  ```csharp
+  builder.Services.AddSingleton<ArchiveStore>();
+  builder.Services.AddPagin8BackendDuckDb(
+      sp => sp.GetRequiredService<ArchiveStore>().Duplicate(),
+      options =>
+      {
+          options.CommandTimeout = 25;
+          // DuckDB queries only: e.g. a search policy without limits a slower primary database needs.
+          options.ContextValidator = sp => new ColumnarSearchPolicy(sp.GetRequiredService<TokenContextValidator>());
+      });
+  ```
+
+  Without `ContextValidator` the DuckDB queries are validated by the `IContextValidator` registered for every provider.
 - DuckDB has no statement timeout: when `commandTimeout` runs out, the query is interrupted and a `TimeoutException` is thrown.
 - Differences handled by the provider: `@p0` parameter markers are rewritten to `$p0`, and text `in` / `not.in` become `OR`-ed / `AND`-ed comparisons, because DuckDB refuses `ILIKE ANY(ARRAY[...])`.
+- Text filters run as DuckDB's string functions, which select the same rows as `ILIKE` and scan a column about three times faster, and an equality on the plain column can use DuckDB's statistics and bloom filters:
+
+  | Filter | Value with letters | Value without letters (only ASCII digits, signs) |
+  |---|---|---|
+  | `eq` | as on PostgreSQL | `col = v` |
+  | `cs` | `contains(lower(col), v)` | `contains(col, v)` |
+  | `stw` | `starts_with(lower(col), v)` | `starts_with(col, v)` |
+  | `enw` | `ends_with(lower(col), v)` | `ends_with(col, v)` |
+
+  `v` is the value lower-cased as on PostgreSQL and taken literally: `%` and `_` are not wildcards. `not.` and `NULL` rows behave as on PostgreSQL. An `eq` value with `%` or `_` stays `ILIKE` unless `UseIndexFriendlyTextComparisons` is on, since that is how PostgreSQL matches it.
+- These rules apply at every depth of `and=(...)` / `or=(...)`, a text `in` inside a group included.
 - Covered by tests on DuckDB: flat models with every comparison, string, `in`, `is`, date and logical operator, sorting, keyset cursors and counts. Nested JSON filters (`with=(...)`, which emit `jsonb`), `incl`/`excl` and JSON results (`IsJson`) are PostgreSQL-specific and not tested on DuckDB.
 - Every command starts an `Activity` on the `ActivitySource` named `1Dev.Pagin8.DuckDb`, tagged with its SQL, for timing.
+
+---
+
+## ⏹️ Cancelling a Query
+
+Every filter provider (PostgreSQL, SQL Server, DuckDB) has `GetAsync`, `GetCountAsync` and `GetAggregatesAsync` overloads that take a `CancellationToken`. Cancelling it stops the query on the database (PostgreSQL and SQL Server cancel the statement on the server, DuckDB interrupts it) and throws `OperationCanceledException` for that token on every provider, so a caller tells a cancellation from a timeout the same way everywhere. A command timeout still throws the provider's own timeout exception.
+
+```csharp
+[HttpGet]
+public async Task<IActionResult> Search(CancellationToken cancellationToken) // HttpContext.RequestAborted
+{
+    var result = await filterProvider.GetAsync<PaymentDto>(View, FilteredDataQuery.Create(Request.QueryString.Value), cancellationToken);
+    return Ok(result);
+}
+```
+
+With ASP.NET Core, the action's `CancellationToken` is cancelled when the client closes the request, e.g. a browser that aborts it with an `AbortController` because a newer search replaced it, so the database stops working on an answer nobody will read. The overloads are default interface methods: an `IFilterProvider` implemented outside pagin8 keeps compiling and ignores the token.
 
 ---
 

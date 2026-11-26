@@ -3,7 +3,9 @@ using _1Dev.Pagin8.Extensions.Backend.Interfaces;
 using _1Dev.Pagin8.Internal;
 using _1Dev.Pagin8.Internal.Configuration;
 using _1Dev.Pagin8.Internal.DateProcessor;
+using _1Dev.Pagin8.Internal.Tokenizer;
 using _1Dev.Pagin8.Internal.Tokenizer.Contracts;
+using _1Dev.Pagin8.Internal.Validators.Contracts;
 using _1Dev.Pagin8.Internal.Visitors;
 using DuckDB.NET.Data;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,6 +67,56 @@ public static class DuckDbServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(connectionFactory);
 
+        return services.AddPagin8BackendDuckDb(_ => connectionFactory, configure: null);
+    }
+
+    /// <summary>
+    /// Adds the DuckDB filter provider over connections created from the application's services,
+    /// e.g. <c>sp =&gt; sp.GetRequiredService&lt;Store&gt;().Duplicate()</c> of a singleton that holds the
+    /// open database.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="createConnection">Returns a new DuckDB connection; the provider owns and disposes it.</param>
+    /// <param name="configure">Command timeout and the validator for DuckDB queries.</param>
+    public static IServiceCollection AddPagin8BackendDuckDb(
+        this IServiceCollection services,
+        Func<IServiceProvider, DuckDBConnection> createConnection,
+        Action<DuckDbProviderOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(createConnection);
+
+        var options = new DuckDbProviderOptions();
+        configure?.Invoke(options);
+
+        return services.AddPagin8BackendDuckDb(
+            sp => new DuckDbConnectionFactory(() => createConnection(sp), options.CommandTimeout),
+            options);
+    }
+
+    /// <summary>
+    /// Adds the DuckDB filter provider with a connection factory created from the application's services.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="connectionFactory">Creates the connection factory, once.</param>
+    /// <param name="configure">The validator for DuckDB queries (the factory sets the command timeout).</param>
+    public static IServiceCollection AddPagin8BackendDuckDb(
+        this IServiceCollection services,
+        Func<IServiceProvider, IDuckDbConnectionFactory> connectionFactory,
+        Action<DuckDbProviderOptions>? configure)
+    {
+        ArgumentNullException.ThrowIfNull(connectionFactory);
+
+        var options = new DuckDbProviderOptions();
+        configure?.Invoke(options);
+
+        return services.AddPagin8BackendDuckDb(connectionFactory, options);
+    }
+
+    private static IServiceCollection AddPagin8BackendDuckDb(
+        this IServiceCollection services,
+        Func<IServiceProvider, IDuckDbConnectionFactory> connectionFactory,
+        DuckDbProviderOptions options)
+    {
         EnsurePagin8CoreRegisteredForPostgreSql(services);
 
         services.AddSingleton(connectionFactory);
@@ -74,7 +126,13 @@ public static class DuckDbServiceCollectionExtensions
             var visitor = new DuckDbTokenVisitor(
                 sp.GetRequiredService<IPagin8MetadataProvider>(),
                 sp.GetRequiredService<IDateProcessor>());
-            var inner = new DuckDbSqlQueryBuilder(sp.GetRequiredService<ITokenizationService>(), visitor);
+            var tokenization = options.ContextValidator is null
+                ? sp.GetRequiredService<ITokenizationService>()
+                : new TokenizationService(
+                    sp.GetRequiredService<ITokenizer>(),
+                    options.ContextValidator(sp),
+                    sp.GetRequiredService<IPagin8MetadataProvider>());
+            var inner = new DuckDbSqlQueryBuilder(tokenization, visitor);
             return new LoggingDuckDbSqlQueryBuilder(inner, sp.GetRequiredService<ILoggerFactory>());
         });
 

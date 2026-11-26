@@ -25,6 +25,11 @@ using QueryBuilder = InterpolatedSql.Dapper.SqlBuilders.QueryBuilder;
 namespace _1Dev.Pagin8.Internal.Visitors;
 public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor dateProcessor) : ISqlTokenVisitor
 {
+    /// <summary>
+    /// The visitor that nested tokens (group members, paging parts) are sent to. A dialect that
+    /// delegates to this visitor sets itself here, so its own rules also apply inside and=/or=.
+    /// </summary>
+    internal ISqlTokenVisitor? ChildVisitor { get; set; }
 
     #region Public methods
 
@@ -124,9 +129,9 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
 
     public QueryBuilderResult Visit<T>(PagingToken token, QueryBuilderResult result) where T : class
     {
-        token.Sort?.Accept<T>(this, result);
-        token.Limit?.Accept<T>(this, result);
-        token.Count?.Accept<T>(this, result);
+        token.Sort?.Accept<T>(ChildVisitor ?? this, result);
+        token.Limit?.Accept<T>(ChildVisitor ?? this, result);
+        token.Count?.Accept<T>(ChildVisitor ?? this, result);
 
         return result;
     }
@@ -634,14 +639,14 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         return "=";
     }
 
-    private static void TryHandleNullColumns(string column, INegationAware token, ref FormattableString query)
+    internal static void TryHandleNullColumns(string column, INegationAware token, ref FormattableString query)
     {
         if (!token.IsNegated) return;
 
         query = $"(({query}) OR {column:raw} IS NULL)";
     }
 
-    private void ProcessChildToken<T>(Token token, QueryBuilderResult result) where T : class => token.Accept<T>(this, result);
+    private void ProcessChildToken<T>(Token token, QueryBuilderResult result) where T : class => token.Accept<T>(ChildVisitor ?? this, result);
 
     private ColumnInfo GetColumnInfo<T>(string field, bool useTranslit = true) where T : class => metadata.GetColumnInfo<T>(field, useTranslit);
 
@@ -786,7 +791,7 @@ private dynamic? FormatColumnValue<T>(string field, string? value) where T : cla
         }
     }
 
-    private static string TryFormatColumnName(string columnName)
+    internal static string TryFormatColumnName(string columnName)
     {
         var reservedWords = new HashSet<string>
         {

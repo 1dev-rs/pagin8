@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.7.0-alpha] - 2026-11-26
+
+### Added
+
+- Cancellation on every provider: `IFilterProvider` (and so `ISqlServerFilterProvider`, `IDuckDbFilterProvider`) has `GetAsync`, `GetCountAsync` and `GetAggregatesAsync` overloads taking a `CancellationToken`. Cancelling it stops the query on the database (PostgreSQL and SQL Server cancel the statement on the server, DuckDB interrupts it) and throws `OperationCanceledException` for that token on every provider; a command timeout still throws the provider's own timeout exception. The overloads are default interface methods, so an `IFilterProvider` implemented elsewhere keeps compiling and ignores the token. The existing overloads are unchanged.
+- `AddPagin8BackendDuckDb(Func<IServiceProvider, DuckDBConnection>, Action<DuckDbProviderOptions>?)` and `AddPagin8BackendDuckDb(Func<IServiceProvider, IDuckDbConnectionFactory>, Action<DuckDbProviderOptions>?)`: connections from a service of the application, and `DuckDbProviderOptions.ContextValidator`, which validates DuckDB queries in place of the `IContextValidator` shared by every provider (e.g. a search policy without the limits a slower primary database needs). The existing overloads are unchanged.
+
+### Changed
+
+- DuckDB: text filters run as DuckDB's string functions instead of `ILIKE`, selecting the same rows: `cs` / `stw` / `enw` as `contains` / `starts_with` / `ends_with` over `lower(col)` with the lower-cased value taken literally, and over the plain column when the value has no letters (only ASCII digits and signs, e.g. account numbers and references), in which case `eq` is `col = v` too. On a 1.5-billion-row Parquet store a substring search ran in 23 s instead of 51-66 s, an equality on a reference in 6.9 s instead of 13.6 s. `not.` and `NULL` rows are unchanged; an `eq` value with `%` or `_` keeps `ILIKE` unless `UseIndexFriendlyTextComparisons` is on. PostgreSQL and SQL Server are unchanged.
+
+### Fixed
+
+- DuckDB: tokens inside `and=(...)` / `or=(...)` were emitted by the PostgreSQL visitor, so a text `in` inside a group failed with "Unsupported comparison ~~* for ANY/ALL". Nested tokens now go through the DuckDB visitor.
+
+### Tests
+
+- `IntegrationTests/DuckDbTextMatchTests`: text filters on DuckDB select the rows `ILIKE` selected (case, literal `%` and `_`, `not.` with `NULL` rows, `in` inside a group), under a decimal-comma culture, and emit the string functions.
+- `IntegrationTests/NullKeyset/QueryCancellationTests`: cancelling a running page or count on PostgreSQL, SQL Server and DuckDB stops it within a second and throws `OperationCanceledException` for the token; a cancelled token runs nothing; an uncancelled token changes nothing.
+
 ## [1.6.6-alpha] - 2026-11-26
 
 ### Fixed
