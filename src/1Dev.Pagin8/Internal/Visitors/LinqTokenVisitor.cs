@@ -276,6 +276,12 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
     }
 
 
+    // Paging is deliberately not applied in LINQ mode (README, "In-Memory Filtering (LINQ)"): the
+    // results of Sort/Limit are discarded and Process returns every match. Callers rely on that,
+    // e.g. TAR's tariff matching and jafin's subscription schemas, which carry paging=(sort(...))
+    // but must see every row; tokenization also adds a fallback sort and limit (DefaultPerPage) to
+    // a query without paging. Applying it would have to be opt-in. The keyset condition below is
+    // not NULL-aware and compares DateTime by date only and bool not at all.
     public IQueryable<T> Visit(PagingToken token, IQueryable<T> queryable)
     {
         token.Sort?.Accept(this, queryable);

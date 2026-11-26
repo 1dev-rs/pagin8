@@ -258,6 +258,8 @@ Expected ~50% performance improvement for nested filters.
 
 **Status:** ✅ RESOLVED — Keyset pagination `IsNullAllowed` branch in `NpgsqlTokenVisitor` and `SqlServerTokenVisitor` now handles null cursor value explicitly (`IS NULL`) and for non-null values uses an explicit null-aware compound expression instead of `COALESCE(null, fallback)`.
 
+**Follow-up:** the `IS NULL` branch was wrong for the strict part of the cursor: after a `NULL` last value it brought back every `NULL` row and none of the values after them. The `COALESCE` version it replaced was consistent with the `ORDER BY`; no test had shown a problem with it. The `NULL` case now compares the `COALESCE` stand-in again; `IntegrationTests/NullKeyset` covers PostgreSQL, SQL Server and DuckDB.
+
 **Labels:** `bug`, `priority:medium`, `phase-3`
 
 **Description:**

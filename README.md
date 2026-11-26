@@ -382,6 +382,18 @@ To initialize the every next page by same criteria, besides columns with directi
 
 There are a few more placeholders that you can use while setting the last value, those are `$empty` for empty strings, and `$null` for `null` values.
 
+Send one of them whenever the last row has no value: a sort field written without a last value (`name.asc,$key.45`) is dropped from the sort of that page, which is then ordered by the remaining fields only, so rows repeat or go missing.
+
+#### Sorting nullable columns
+
+A column allows `NULL` when its property is a nullable value type (`int?`, `DateTime?`, ...) or carries `[NullsAllowed]`; a `string` that can be `NULL` needs `[NullsAllowed]`, since pagin8 does not read nullable reference annotations. Mark only properties whose column allows `NULL`.
+
+Such a column is ordered by a stand-in for `NULL`: `COALESCE(col, min)` on PostgreSQL and DuckDB, `ISNULL(col, min)` on SQL Server, where `min` is `-1` for numbers, `DateTime.MinValue` (`1753-01-01` on SQL Server) for dates, `false` / `0` for booleans and the two-character text `''` for strings. Consequences to know:
+
+- `NULL` sorts together with the stand-in (`-1`, `false`, ...), ties broken by the key, and a number below `-1` sorts before `NULL`.
+- An index on the column cannot serve that order; only an expression index on the same `COALESCE(...)` could. Sorting a large table by a nullable column scans and sorts.
+- A column that holds `NULL` but is not marked nullable is ordered by the database's default (PostgreSQL puts `NULL` last ascending) and its `NULL` rows are skipped by the cursor.
+
 String cursors are converted from Cyrillic to Latin by default in PostgreSQL and SQL Server.
 Add `[SkipCursorTransliteration]` from `_1Dev.Pagin8.Internal.Attributes` to a query DTO property when the client sends its original stored sort value.
 Each field in a composite sort follows its own policy. `[UseTranslit]` controls search independently and can be combined with this attribute.

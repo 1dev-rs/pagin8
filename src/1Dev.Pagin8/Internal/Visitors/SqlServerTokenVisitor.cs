@@ -320,7 +320,23 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
                 var formattedName = TryFormatColumnName(currentField);
                 var @operator = GetComparisonOperator(j, i, currentSortOrder);
 
-                if (formattedValue is null && @operator is "=")
+                var isNullAllowed = GetColumnInfo<T>(currentField, useTranslit: false).IsNullAllowed;
+
+                if (currentSortExpression.LastValue is null && isNullAllowed)
+                {
+                    // ORDER BY sorts NULL as ISNULL(col, min), so a NULL cursor ($null) is min: equal
+                    // to NULL and min itself, and after it every larger value (ascending) or every
+                    // smaller one (descending). "col IS NULL" for the strict part, as before,
+                    // repeated the NULL rows and skipped the values after them. An empty value
+                    // ($empty or none) on a non-text column keeps the old condition below: clients
+                    // that send it for a 0 or false would otherwise page through the same rows again.
+                    var coalesce = GetCoalesceMinValue(GetTypeCodeForProperty<T>(currentField));
+                    if (@operator is "=")
+                        builder += $" ({formattedName:raw} IS NULL OR {formattedName:raw} = {coalesce})";
+                    else
+                        builder += $" ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {coalesce})";
+                }
+                else if (formattedValue is null && @operator is "=")
                 {
                     builder += $" {formattedName:raw} IS NULL";
                 }
@@ -333,7 +349,7 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
                     {
                         if (formattedValue is null)
                         {
-                            // Cursor value is null with non-equality operator: only NULL rows qualify
+                            // An empty value on a non-text column: the 1.6.4 condition, unchanged.
                             builder += $" {formattedName:raw} IS NULL";
                         }
                         else
@@ -359,13 +375,19 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
         builder += $"ORDER BY ";
 
         var added = false;
+        var ordered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var index = 0; index < token.SortExpressions.Count; index++)
         {
             var expression = token.SortExpressions[index];
 
-            if (index > 0 && added) builder += $",";
-
             var columnInfo = GetColumnInfo<T>(expression.Field, useTranslit: false);
+
+            // SQL Server refuses a column twice in ORDER BY ("A column has been specified more than
+            // once"), which a sort naming the key next to $key (id.asc.5,$key.5) produces. The
+            // repeated column cannot change the order, so it is left out.
+            if (!ordered.Add(columnInfo.Name)) continue;
+
+            if (added) builder += $",";
 
             var typeCode = GetTypeCodeForProperty<T>(columnInfo.Name);
 

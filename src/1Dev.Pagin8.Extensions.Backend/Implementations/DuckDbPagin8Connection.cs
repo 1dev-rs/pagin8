@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text;
 using DuckDB.NET.Data;
 
@@ -122,6 +123,11 @@ public sealed class DuckDbPagin8Command : DbCommand
             ? new Timer(_ => { Interlocked.Exchange(ref timedOut, 1); _inner.Cancel(); }, null, TimeSpan.FromSeconds(CommandTimeout), Timeout.InfiniteTimeSpan)
             : null;
 
+        // DuckDB.NET turns a decimal parameter into text with the current culture when DuckDB casts
+        // it, so under a decimal comma ("sr-Latn": -2,50) a nullable decimal cursor failed with
+        // "Could not convert string '-2,50' to INT32". Parameters are bound under the invariant culture.
+        var culture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
         try
         {
             return execute();
@@ -135,6 +141,10 @@ public sealed class DuckDbPagin8Command : DbCommand
         {
             activity?.SetStatus(ActivityStatusCode.Error);
             throw;
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = culture;
         }
     }
 

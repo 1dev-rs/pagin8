@@ -296,7 +296,23 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
                 var formattedName = TryFormatColumnName(currentField);
                 var @operator = GetComparisonOperator(j, i, currentSortOrder);
 
-                if (formattedValue is null && @operator is "=")
+                var isNullAllowed = GetColumnInfo<T>(currentField, useTranslit: false).IsNullAllowed;
+
+                if (currentSortExpression.LastValue is null && isNullAllowed)
+                {
+                    // ORDER BY sorts NULL as COALESCE(col, min), so a NULL cursor ($null) is min: equal
+                    // to NULL and min itself, and after it every larger value (ascending) or every
+                    // smaller one (descending). "col IS NULL" for the strict part, as before,
+                    // repeated the NULL rows and skipped the values after them. An empty value
+                    // ($empty or none) on a non-text column keeps the old condition below: clients
+                    // that send it for a 0 or false would otherwise page through the same rows again.
+                    var coalesce = GetCoalesceMinValue(GetTypeCodeForProperty<T>(currentField));
+                    if (@operator is "=")
+                        builder += $" ({formattedName:raw} IS NULL OR {formattedName:raw} = {coalesce})";
+                    else
+                        builder += $" ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {coalesce})";
+                }
+                else if (formattedValue is null && @operator is "=")
                 {
                     builder += $" {formattedName:raw} IS NULL";
                 }
@@ -309,7 +325,7 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
                     {
                         if (formattedValue is null)
                         {
-                            // Cursor value is null with non-equality operator: only NULL rows qualify
+                            // An empty value on a non-text column: the 1.6.4 condition, unchanged.
                             builder += $" {formattedName:raw} IS NULL";
                         }
                         else

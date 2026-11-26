@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.6.6-alpha] - 2026-11-26
+
+### Fixed
+
+- Cursor paging over a nullable column repeated or skipped rows when a page ended on a `NULL`. The strict part of the cursor condition for a `NULL` last value was `col IS NULL`, which brought back every `NULL` row and none of the values after them; it now treats `NULL` as the stand-in the `ORDER BY` uses (`COALESCE(col, min)` / `ISNULL(col, min)`), as pagin8 did before v1.3.20 (review item #12 in `GITHUB_ISSUES.md`). The order of results does not change. PostgreSQL, SQL Server and DuckDB. This applies to an explicit `$null` only: an empty last value (`$empty` or none) on a non-text column keeps the 1.6.4 condition, so a client that sends it for a `0` or `false` still stops early instead of paging through the same rows again.
+- `$null` as a text cursor value was read as an empty string, so a page ending on a `NULL` text value started over from the first non-empty value. It is now `NULL`; `$empty` is still the empty string.
+- SQL Server: a sort naming the key next to `$key` (`sort(name.asc.x,id.asc.5,$key.5)`) failed with "A column has been specified more than once in the order by list". The repeated column is left out of `ORDER BY`.
+- DuckDB: under a culture with a decimal comma, a cursor on a nullable `decimal` column failed with "Could not convert string '-2,50' to INT32"; parameters are now bound under the invariant culture.
+
+### Documentation
+
+- README: send `$null` / `$empty` for a missing last value (a field without one is dropped from the sort of that page); how nullable columns are ordered and why an index cannot serve that order; LINQ mode does not apply `paging=(...)` (unchanged, now also noted in `LinqTokenVisitor`).
+
+### Tests
+
+- `IntegrationTests/NullKeyset`: every nullable type, both directions, page sizes 1, 3 and 7, with and without filters, and sorts over two nullable columns, scrolled to the end on PostgreSQL, SQL Server and DuckDB. Each scroll must return as many rows as `COUNT(*)` of its filter, none twice, in the order of the whole result.
+- The PostgreSQL and SQL Server integration tests run on a server of your own when `PAGIN8_TEST_POSTGRES_CONNECTION` / `PAGIN8_TEST_SQLSERVER_CONNECTION` hold an admin connection string, and in Testcontainers otherwise.
+
+### Withdrawn
+
+- 1.6.5-alpha was reverted and should not be used: besides these fixes it changed the order of `NULL` in sorted results and applied paging in LINQ mode, which cut in-memory filtering to `DefaultPerPage` rows.
+
 ## [1.6.4-alpha] - 2026-11-25
 
 ### Added
