@@ -56,6 +56,14 @@ public class DuckDbTokenVisitor : ISqlTokenVisitor
     // not. and NULL rows follow the PostgreSQL emission (NOT ..., then OR col IS NULL).
     public QueryBuilderResult Visit<T>(ComparisonToken token, QueryBuilderResult builder) where T : class
     {
+        // [CompareTime]: the value's interval, compared with the column itself (TimeInterval).
+        if (string.IsNullOrEmpty(token.JsonPath) && _metadata.GetColumnInfo<T>(token.Field) is { CompareTime: true } timeColumn)
+        {
+            ComparisonValidator.EnsureTypeCodeOperatorValid(TypeCode.DateTime, token.Operator);
+            builder.Builder += TimeInterval.BuildSql(NpgsqlTokenVisitor.TryFormatColumnName(timeColumn.Name), token);
+            return builder;
+        }
+
         if (!TryBuildTextMatch<T>(token, out var query))
             return _postgres.Visit<T>(token, builder);
 

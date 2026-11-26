@@ -13,4 +13,7 @@ public record ColumnInfo(string Name, Type Type, bool IsTranslit = false, bool I
     public bool IsKey { get; set; } = IsKey;
 
     public bool SkipCursorTransliteration { get; set; }
+
+    /// <summary>A <see cref="DateTime"/> property with [CompareTime]: filters keep the time of the value.</summary>
+    public bool CompareTime { get; set; }
 }

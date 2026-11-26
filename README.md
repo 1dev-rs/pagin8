@@ -226,6 +226,7 @@ All flags that can appear in column metadata:
 | `no-sort` | The column cannot be used in `sort(...)` (`[NonSortable]`). |
 | `array` | The column is a collection. `type` is the element type. |
 | `date-only` | The column is a `DateOnly`. `type` stays `DateTime` for backward compatibility, but the value has no time part, so clients should use a date-only picker. |
+| `compare-time` | The column is a `DateTime` with `[CompareTime]`: its filters keep the time, so clients should offer a date and time picker. Without the flag a `DateTime` filter compares the date only. |
 
 Collections of simple values report their element type and have no `properties`. For example, a `List<DateOnly?>` is reported as `type: "DateTime"` with flags `["array", "date-only"]`.
 
@@ -317,6 +318,16 @@ Date values in `eq`, `gt`, `lt`, `gte`, `lte` and `in` accept these formats:
 
 - Values are used as-is, without time zone conversion. Time zone suffixes such as `Z` or `+02:00` are not accepted and are rejected with `Pagin8_InvalidComparison`.
 - Comparison operators compare the **date part only** (`DATE(...)` on PostgreSQL, `CAST(... AS DATE)` on SQL Server). For example, `createdAt=eq.2024-01-15` matches every row from that day.
+- **`[CompareTime]`** on a `DateTime` property keeps the time: the value is the interval of its precision, `yyyy-MM-dd` a day, `yyyy-MM-ddTHH:mm` a minute (accepted only here), `yyyy-MM-ddTHH:mm:ss` a second, `yyyy-MM-ddTHH:mm:ss.fff` a millisecond. `eq` matches inside it, `gte` / `lt` compare with its start, `gt` / `lte` with its end, on every provider and in LINQ mode:
+
+  | Filter | Rows |
+  |---|---|
+  | `executedAt=eq.2026-11-25T12:30` | 12:30:00.000 up to 12:30:59.999 |
+  | `executedAt=lte.2026-11-25T12:30` | up to 12:30:59.999 |
+  | `executedAt=gt.2026-11-25T12:30` | from 12:31:00 |
+  | `executedAt=eq.2026-11-25` | the whole day, as without the attribute |
+
+  The column is compared as it is (`col >= @start AND col < @end`), so an index on it applies. Its metadata carries `compare-time`.
 - `in` compares the full value, including the time.
 - SQL and LINQ (in-memory) mode accept exactly the same formats.
 

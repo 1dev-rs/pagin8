@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.8.0-alpha] - 2026-11-26
+
+### Added
+
+- `[CompareTime]` on a `DateTime` / `DateTime?` property: its filters keep the time of the value, on PostgreSQL, SQL Server, DuckDB and in LINQ mode. The value is the interval of its own precision: a day (`yyyy-MM-dd`), a minute (`yyyy-MM-ddTHH:mm`, a format accepted only for such a property), a second (`yyyy-MM-ddTHH:mm:ss`) or a millisecond (`yyyy-MM-ddTHH:mm:ss.fff`). `eq` matches inside it, `gte` / `lt` compare with its start, `gt` / `lte` with its end, `not.` keeps `NULL` rows. A value without a time selects the same rows as before. The SQL compares the column itself (`col >= @start AND col < @end`), so an index on it applies; SQL Server sends the bounds as `datetime2`.
+- Column metadata flag `compare-time` on such a property, so a client offers a time picker for it only.
+
+### Unchanged
+
+- A property without `[CompareTime]` compares the date part, as before, on every provider; the attribute is ignored on a `DateOnly`. `in` on a `DateTime` and the `ago` / `for` ranges are unchanged.
+
+### Tests
+
+- `IntegrationTests/NullKeyset/CompareTimeTests`: the same 19 filters on PostgreSQL, SQL Server, DuckDB and LINQ (each precision and operator, `not.`, `NULL`, groups, a property without the attribute, a `DateOnly`), values in no known format refused, and the metadata flag.
+
 ## [1.7.1-alpha] - 2026-11-26
 
 ### Added

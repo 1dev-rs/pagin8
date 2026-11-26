@@ -37,6 +37,9 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
 
     private Expression GenerateComparisonExpression(ComparisonToken token)
     {
+        if (GetColumnInfo(token.Field) is { CompareTime: true } timeColumn)
+            return GenerateTimeComparison(token, timeColumn.Name);
+
         var comparison = GenerateDatabaseComparison(token);
         var typeCode = GetTypeCodeForProperty(token.Field);
         var isText = IsText(typeCode);
@@ -85,6 +88,35 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
         }
 
         return token.IsNegated ? Expression.Not(comparisonExpression) : comparisonExpression;
+    }
+
+    // [CompareTime]: the value's interval (TimeInterval), as the SQL providers compare it; a null
+    // value never matches, and not. keeps it, as in SQL.
+    private Expression GenerateTimeComparison(ComparisonToken token, string column)
+    {
+        ComparisonValidator.EnsureTypeCodeOperatorValid(TypeCode.DateTime, token.Operator);
+
+        var property = GetPropertyInfo(typeof(T), column);
+        Expression left = Expression.Property(_parameter, property);
+        Expression? hasValue = null;
+        if (property.PropertyType == typeof(DateTime?))
+        {
+            hasValue = Expression.Property(left, nameof(Nullable<DateTime>.HasValue));
+            left = Expression.Property(left, nameof(Nullable<DateTime>.Value));
+        }
+
+        Expression? body = null;
+        foreach (var (op, bound) in TimeInterval.Parse(token.Value).Bounds(token.Operator))
+        {
+            var constant = Expression.Constant(bound);
+            Expression condition = op == ">=" ? Expression.GreaterThanOrEqual(left, constant) : Expression.LessThan(left, constant);
+            body = body is null ? condition : Expression.AndAlso(body, condition);
+        }
+
+        if (hasValue != null)
+            body = Expression.AndAlso(hasValue, body!);
+
+        return token.IsNegated ? Expression.Not(body!) : body!;
     }
 
     public IQueryable<T> Visit(GroupToken groupToken, IQueryable<T> queryable)

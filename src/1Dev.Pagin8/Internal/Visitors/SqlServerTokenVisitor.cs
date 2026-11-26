@@ -31,6 +31,18 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
     public QueryBuilderResult Visit<T>(ComparisonToken token, QueryBuilderResult result) where T : class
     {
         var (procType, innerType) = DetermineProcessingType(typeof(T), token.JsonPath);
+
+        // [CompareTime]: the value's interval, compared with the column itself (TimeInterval).
+        if (procType == ProcessingType.Regular && GetColumnInfo(innerType, token.Field) is { CompareTime: true } timeColumn)
+        {
+            ComparisonValidator.EnsureTypeCodeOperatorValid(TypeCode.DateTime, token.Operator);
+            // A DateTime parameter is sent as datetime, rounded to 1/300 s, which would move a
+            // millisecond bound; as ISO text cast to datetime2 it stays exact.
+            result.Builder += TimeInterval.BuildSql(TryFormatColumnName(timeColumn.Name), token,
+                b => $"CAST({b.ToString("yyyy-MM-ddTHH:mm:ss.fffffff", CultureInfo.InvariantCulture)} AS DATETIME2)");
+            return result;
+        }
+
         var comparison = GenerateDatabaseComparison(innerType, token);
         var typeCode = GetTypeCodeForProperty(innerType, token.Field);
         var isText = IsText(typeCode);

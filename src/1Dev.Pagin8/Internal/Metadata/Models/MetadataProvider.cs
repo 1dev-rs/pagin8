@@ -16,6 +16,8 @@ public class MetadataProvider : IMetadataProvider
     private const string ArrayFlag = "array";
     // DateOnly is reported with Type "DateTime" (backward compatible); this flag tells clients there is no time part
     private const string DateOnlyFlag = "date-only";
+    // A DateTime property with [CompareTime]: its filters keep the time, so clients offer a time picker
+    private const string CompareTimeFlag = "compare-time";
     private const int MaxSerializationDepth = 1;
 
     // Shared across all instances — entity types and their attributes never change at runtime.
@@ -78,6 +80,11 @@ public class MetadataProvider : IMetadataProvider
             flags.Add(DateOnlyFlag);
         }
 
+        if (ComparesTime(property))
+        {
+            flags.Add(CompareTimeFlag);
+        }
+
         if (arrayInnerType != null)
         {
             flags.Add(ArrayFlag);
@@ -132,7 +139,8 @@ public class MetadataProvider : IMetadataProvider
 
         return new ColumnInfo(columnName, propertyInfo.PropertyType, isTranslit, isNullAllowed, isKey)
         {
-            SkipCursorTransliteration = propertyInfo.GetCustomAttribute<SkipCursorTransliterationAttribute>() is not null
+            SkipCursorTransliteration = propertyInfo.GetCustomAttribute<SkipCursorTransliterationAttribute>() is not null,
+            CompareTime = ComparesTime(propertyInfo)
         };
     }
 
@@ -198,6 +206,10 @@ public class MetadataProvider : IMetadataProvider
                 var prop = GetCachedProperty(key.Type, key.Name);
                 return prop != null && prop.GetCustomAttribute<NullsAllowedAttribute>() is not null;
             });
+
+    private static bool ComparesTime(PropertyInfo propertyInfo)
+        => propertyInfo.GetCustomAttribute<CompareTimeAttribute>() is not null
+           && (Nullable.GetUnderlyingType(propertyInfo.PropertyType) ?? propertyInfo.PropertyType) == typeof(DateTime);
 
     private static bool IsNullAllowed(PropertyInfo propertyInfo)
         => propertyInfo.GetCustomAttribute<NullsAllowedAttribute>() is not null ||
