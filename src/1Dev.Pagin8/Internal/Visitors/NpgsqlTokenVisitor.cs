@@ -295,34 +295,9 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
                 var formattedValue = FormatColumnValue<T>(currentField, currentSortExpression.LastValue);
                 var formattedName = TryFormatColumnName(currentField);
                 var @operator = GetComparisonOperator(j, i, currentSortOrder);
+                var isNullAllowed = GetColumnInfo<T>(currentField, useTranslit: false).IsNullAllowed;
 
-                if (formattedValue is null && @operator is "=")
-                {
-                    builder += $" {formattedName:raw} IS NULL";
-                }
-                else
-                {
-                    var columnInfo = GetColumnInfo<T>(currentField, useTranslit: false);
-                    var typeCode = GetTypeCodeForProperty<T>(currentField);
-
-                    if (columnInfo.IsNullAllowed)
-                    {
-                        if (formattedValue is null)
-                        {
-                            // Cursor value is null with non-equality operator: only NULL rows qualify
-                            builder += $" {formattedName:raw} IS NULL";
-                        }
-                        else
-                        {
-                            var coalesce = GetCoalesceMinValue(typeCode);
-                            builder += $" (({formattedName:raw} IS NULL AND {coalesce} {@operator:raw} {formattedValue}) OR ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {formattedValue}))";
-                        }
-                    }
-                    else
-                    {
-                        builder += $" {formattedName:raw} {@operator:raw} {formattedValue}";
-                    }
-                }
+                builder += KeysetComparison(formattedName, @operator, formattedValue, isNullAllowed);
             }
 
             builder += $")";
@@ -335,23 +310,27 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         builder += $"ORDER BY ";
 
         var added = false;
+        var ordered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var index = 0; index < token.SortExpressions.Count; index++)
         {
             var expression = token.SortExpressions[index];
 
-            if (index > 0 && added) builder += $",";
-
             var columnInfo = GetColumnInfo<T>(expression.Field, useTranslit: false);
 
-            var typeCode = GetTypeCodeForProperty<T>(columnInfo.Name);
+            // A column already in the order (id.desc followed by $key) cannot change it, and SQL
+            // Server refuses the same column twice.
+            if (!ordered.Add(columnInfo.Name)) continue;
+
+            if (added) builder += $",";
 
             var formattedName = TryFormatColumnName(columnInfo.Name);
 
+            // NULL is the smallest value (see KeysetComparison), ordered on the column itself so
+            // that an index on (column NULLS FIRST, key) serves the order in both directions.
             if (columnInfo.IsNullAllowed)
             {
-                var coalesce = GetCoalesceMinValue(typeCode);
                 var nullPosition = expression.SortOrder == SortOrder.Ascending ? "NULLS FIRST" : "NULLS LAST";
-                builder += $"COALESCE({formattedName:raw}, {coalesce}) {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw} {nullPosition:raw}";
+                builder += $"{formattedName:raw} {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw} {nullPosition:raw}";
             }
             else
             {
@@ -479,32 +458,6 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
             : "";
     }
 
-    private static object GetCoalesceMinValue(TypeCode typeCode)
-    {
-        switch (typeCode)
-        {
-            case TypeCode.String:
-            case TypeCode.Char:
-                return "''";
-            case TypeCode.Int16:
-            case TypeCode.UInt16:
-            case TypeCode.Int32:
-            case TypeCode.UInt32:
-            case TypeCode.Int64:
-            case TypeCode.UInt64:
-            case TypeCode.Double:
-            case TypeCode.Single:
-            case TypeCode.Decimal:
-                return -1;
-            case TypeCode.DateTime:
-                return DateTime.MinValue;
-            case TypeCode.Boolean:
-                return false;
-            default:
-                throw new Pagin8Exception(Pagin8StatusCode.Pagin8_ColumnNotSortable.Code, $"Sorting nullable columns is not supported for type code: {typeCode}");
-        }
-    }
-
     private static FormattableString GenerateInQuery(string column, bool isText, InToken token, DbComparison comparison)
     {
         var @operator = token.GetSqlOperator(isText);
@@ -606,6 +559,31 @@ public class NpgsqlTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor
         {
             keyExpression.Field = GetEntityKey<T>();
         }
+    }
+
+    // One column of the keyset condition. A nullable column sorts NULL as its smallest value: first
+    // ascending, last descending, the order SQL Server gives natively. Rows after a NULL cursor
+    // are every non-NULL row ascending and none descending; rows after a value descending include
+    // the NULLs. The column is compared as it is, never through an expression, so an index on it
+    // still applies. A column that does not allow NULL keeps the plain comparison.
+    internal static FormattableString KeysetComparison(string column, string @operator, object? value, bool isNullAllowed)
+    {
+        if (@operator == "=")
+        {
+            if (value is null) return $" {column:raw} IS NULL";
+            return $" {column:raw} = {value}";
+        }
+
+        if (!isNullAllowed) return $" {column:raw} {@operator:raw} {value}";
+
+        if (value is null)
+        {
+            if (@operator == ">") return $" {column:raw} IS NOT NULL";
+            return $" 1 = 0";
+        }
+
+        if (@operator == ">") return $" {column:raw} > {value}";
+        return $" ({column:raw} < {value} OR {column:raw} IS NULL)";
     }
 
     private static string GetComparisonOperator(int j, int i, SortOrder sortOrder)

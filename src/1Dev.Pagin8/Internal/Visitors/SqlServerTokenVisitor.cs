@@ -320,33 +320,9 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
                 var formattedName = TryFormatColumnName(currentField);
                 var @operator = GetComparisonOperator(j, i, currentSortOrder);
 
-                if (formattedValue is null && @operator is "=")
-                {
-                    builder += $" {formattedName:raw} IS NULL";
-                }
-                else
-                {
-                    var columnInfo = GetColumnInfo<T>(currentField, useTranslit: false);
-                    var typeCode = GetTypeCodeForProperty<T>(currentField);
+                var isNullAllowed = GetColumnInfo<T>(currentField, useTranslit: false).IsNullAllowed;
 
-                    if (columnInfo.IsNullAllowed)
-                    {
-                        if (formattedValue is null)
-                        {
-                            // Cursor value is null with non-equality operator: only NULL rows qualify
-                            builder += $" {formattedName:raw} IS NULL";
-                        }
-                        else
-                        {
-                            var coalesce = GetCoalesceMinValue(typeCode);
-                            builder += $" ((ISNULL({formattedName:raw}, {coalesce}) {@operator:raw} {formattedValue} AND {formattedName:raw} IS NULL) OR ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {formattedValue}))";
-                        }
-                    }
-                    else
-                    {
-                        builder += $" {formattedName:raw} {@operator:raw} {formattedValue}";
-                    }
-                }
+                builder += NpgsqlTokenVisitor.KeysetComparison(formattedName, @operator, formattedValue, isNullAllowed);
             }
 
             builder += $")";
@@ -359,27 +335,24 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
         builder += $"ORDER BY ";
 
         var added = false;
+        var ordered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var index = 0; index < token.SortExpressions.Count; index++)
         {
             var expression = token.SortExpressions[index];
 
-            if (index > 0 && added) builder += $",";
-
             var columnInfo = GetColumnInfo<T>(expression.Field, useTranslit: false);
 
-            var typeCode = GetTypeCodeForProperty<T>(columnInfo.Name);
+            // A column already in the order (id.desc followed by $key) cannot change it, and SQL
+            // Server refuses the same column twice.
+            if (!ordered.Add(columnInfo.Name)) continue;
+
+            if (added) builder += $",";
 
             var formattedName = TryFormatColumnName(columnInfo.Name);
 
-            if (columnInfo.IsNullAllowed)
-            {
-                var coalesce = GetCoalesceMinValue(typeCode);
-                builder += $"ISNULL({formattedName:raw}, {coalesce}) {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw}";
-            }
-            else
-            {
-                builder += $"{formattedName:raw} {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw}";
-            }
+            // SQL Server orders NULL first ascending and last descending, the order the keyset
+            // condition (NpgsqlTokenVisitor.KeysetComparison) expects, so a nullable column needs no more.
+            builder += $"{formattedName:raw} {expression.SortOrder.GetQueryFromSortOrder().ToUpper():raw}";
 
             added = true;
         }
@@ -498,35 +471,6 @@ public class SqlServerTokenVisitor(IPagin8MetadataProvider metadata, IDateProces
             ComparisonOperator.Like ?
             $"ESCAPE '{QueryBuilderHelper.EscapeCharacter}' "
             : "";
-    }
-
-    private static object GetCoalesceMinValue(TypeCode typeCode)
-    {
-        switch (typeCode)
-        {
-            case TypeCode.String:
-            case TypeCode.Char:
-                return "''";
-            case TypeCode.Int16:
-            case TypeCode.UInt16:
-            case TypeCode.Int32:
-            case TypeCode.UInt32:
-            case TypeCode.Int64:
-            case TypeCode.UInt64:
-            case TypeCode.Double:
-            case TypeCode.Single:
-            case TypeCode.Decimal:
-                return -1;
-            case TypeCode.DateTime:
-                // Parameters are sent as SQL "datetime" by default, which cannot hold DateTime.MinValue (year 1)
-                return SqlDateTime.MinValue.Value;
-            // SQL Server has no boolean literal; 0 (int) is the BIT-compatible fallback
-            // for ISNULL(boolCol, <coalesce>) so it's never formatted as "False" via ToString().
-            case TypeCode.Boolean:
-                return 0;
-            default:
-                throw new Pagin8Exception(Pagin8StatusCode.Pagin8_ColumnNotSortable.Code, $"Sorting nullable columns is not supported for type code: {typeCode}");
-        }
     }
 
     private static FormattableString GenerateInQuery(string column, bool isText, InToken token, DbComparison comparison)

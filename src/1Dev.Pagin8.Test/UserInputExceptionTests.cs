@@ -35,7 +35,7 @@ public abstract class UserInputExceptionTestsBase
     [InlineData("child.with=(name.eq.a,limit.5)")]
     [InlineData("and=(id.eq.1,limit.5)")]
     [InlineData("or=(id.eq.1,sort(id.asc))")]
-    [InlineData("paging=(sort(reference.asc))")]
+    [InlineData("paging=(sort(reference.asc.abc,$key.5),limit.10)")]
     public void InvalidInput_ThrowsPagin8Exception(string query)
     {
         var act = () => Sut.BuildSqlQuery<TestExceptionEntity>(DateOnlyTestHelper.Build(query));
@@ -48,7 +48,16 @@ public abstract class UserInputExceptionTestsBase
     {
         var result = Sut.BuildSqlQuery<TestExceptionEntity>(DateOnlyTestHelper.Build("paging=(sort(ratio.asc))"));
 
-        result.Builder.AsSql().Sql.Should().Contain("ratio, @p0");
+        result.Builder.AsSql().Sql.Should().Contain("ORDER BY ratio ASC");
+    }
+
+    // Any nullable type sorts now that NULL is ordered by the engine rather than by a stand-in value.
+    [Fact]
+    public void Sort_OnNullableGuid_IsSupported()
+    {
+        var result = Sut.BuildSqlQuery<TestExceptionEntity>(DateOnlyTestHelper.Build("paging=(sort(reference.asc))"));
+
+        result.Builder.AsSql().Sql.Should().Contain("ORDER BY reference ASC");
     }
 
     [Fact]
