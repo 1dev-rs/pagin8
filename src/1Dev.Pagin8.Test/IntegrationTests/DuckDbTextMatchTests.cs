@@ -95,6 +95,9 @@ public class DuckDbTextMatchTests : IClassFixture<DuckDbTextMatchFixture>
         { "code=enw.-123", [1, 2] },
         { "code=cs.x_1", [5] },
         { "code=cs.x%1", [7] },
+        // A value typed in Cyrillic is compared transliterated, as on PostgreSQL.
+        { "code=cs.АБЦ", [1, 2, 10] },
+        { "code=stw.Абц-1", [1, 2] },
         { "code=not.cs.123", [4, 5, 6, 7, 8, 10, 11] },
         { "code=not.eq.123", [1, 2, 4, 5, 6, 7, 8, 9, 10, 11] },
         { "code=not.stw.ab", [3, 4, 5, 6, 7, 8, 9, 11] },
