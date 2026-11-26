@@ -1,4 +1,8 @@
+using System.Globalization;
 using _1Dev.Pagin8.Internal.DateProcessor;
+using _1Dev.Pagin8.Internal.Exceptions.Base;
+using _1Dev.Pagin8.Internal.Exceptions.StatusCodes;
+using _1Dev.Pagin8.Internal.Helpers;
 using _1Dev.Pagin8.Internal.Metadata.Models;
 using _1Dev.Pagin8.Internal.Tokenizer.Contracts;
 using _1Dev.Pagin8.Internal.Tokenizer.Operators;
@@ -8,6 +12,7 @@ using _1Dev.Pagin8.Internal.Validators;
 using AspNet.Transliterator;
 using Internal.Configuration;
 using Pagin8.Internal.Configuration;
+using QueryBuilder = InterpolatedSql.Dapper.SqlBuilders.QueryBuilder;
 
 namespace _1Dev.Pagin8.Internal.Visitors;
 
@@ -24,10 +29,18 @@ public class DuckDbTokenVisitor : ISqlTokenVisitor
 {
     private readonly IPagin8MetadataProvider _metadata;
     private readonly NpgsqlTokenVisitor _postgres;
+    private readonly bool _sortByTranslit;
 
     public DuckDbTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor dateProcessor)
+        : this(metadata, dateProcessor, sortByTranslit: false)
+    {
+    }
+
+    /// <param name="sortByTranslit">Sort and page a [UseTranslit] text property by its translit column.</param>
+    public DuckDbTokenVisitor(IPagin8MetadataProvider metadata, IDateProcessor dateProcessor, bool sortByTranslit)
     {
         _metadata = metadata;
+        _sortByTranslit = sortByTranslit;
         _postgres = new NpgsqlTokenVisitor(metadata, dateProcessor) { ChildVisitor = this };
     }
 
@@ -75,8 +88,26 @@ public class DuckDbTokenVisitor : ISqlTokenVisitor
         return _postgres.Visit<T>(group, builder);
     }
 
+    // With sortByTranslit, a sort by a [UseTranslit] text property orders and pages by its translit
+    // column, the one its filters use: DuckDB sorts text binary, so by the plain column "Zemun" comes
+    // before "beograd" and "Čačak" after both. The cursor value is transliterated as a filter value
+    // is. Every other sort is the PostgreSQL emission; this one repeats it with the translit column.
     public QueryBuilderResult Visit<T>(SortToken token, QueryBuilderResult builder) where T : class
-        => _postgres.Visit<T>(token, builder);
+    {
+        if (!_sortByTranslit)
+            return _postgres.Visit<T>(token, builder);
+
+        MapPlaceholderToKey<T>(token.SortExpressions);
+        if (token.SortExpressions.All(e => GetSortTranslitColumn<T>(e.Field) is null))
+            return _postgres.Visit<T>(token, builder);
+
+        if (token.SortExpressions.Any(e => !_metadata.IsFieldSortable<T>(e.Field)))
+            throw new Pagin8Exception(Pagin8StatusCode.Pagin8_ColumnNotSortable.Code);
+
+        BuildSortConditions<T>(builder.Builder, token.SortExpressions);
+        BuildSortOrder<T>(builder.Builder, token.SortExpressions);
+        return builder;
+    }
 
     public QueryBuilderResult Visit<T>(LimitToken token, QueryBuilderResult builder) where T : class
         => _postgres.Visit<T>(token, builder);
@@ -144,6 +175,150 @@ public class DuckDbTokenVisitor : ISqlTokenVisitor
         query = $"({query})";
         return true;
     }
+
+    private void MapPlaceholderToKey<T>(IReadOnlyCollection<SortExpression> sortExpressions) where T : class
+    {
+        if (sortExpressions == null) throw new Pagin8Exception(Pagin8StatusCode.Pagin8_MissingSortExpressions.Code);
+
+        foreach (var keyExpression in sortExpressions.Where(x => x.Field == QueryConstants.KeyPlaceholder))
+            keyExpression.Field = _metadata.GetEntityKey<T>();
+    }
+
+    // The translit column a sort by this field uses, or null when it uses the field's own column.
+    private string? GetSortTranslitColumn<T>(string field) where T : class
+    {
+        if (_metadata.GetTypeCodeForProperty<T>(field) != TypeCode.String) return null;
+
+        var columnInfo = _metadata.GetColumnInfo<T>(field);
+        return columnInfo.IsTranslit ? columnInfo.Name : null;
+    }
+
+    // NpgsqlTokenVisitor.BuildSortConditions, with the translit column and value for a translit field.
+    private void BuildSortConditions<T>(QueryBuilder builder, IReadOnlyList<SortExpression> sortExpressions) where T : class
+    {
+        if (sortExpressions.All(x => string.IsNullOrEmpty(x.LastValue))) return;
+
+        builder += $"(";
+        for (var i = 0; i < sortExpressions.Count; i++)
+        {
+            if (i > 0) builder += $" OR ";
+
+            builder += $"(";
+
+            for (var j = 0; j <= i; j++)
+            {
+                var expression = sortExpressions[j];
+                var field = expression.Field;
+
+                if (j > 0) builder += $" AND";
+
+                var translitColumn = GetSortTranslitColumn<T>(field);
+                var formattedValue = FormatColumnValue<T>(field, expression.LastValue, translitColumn is not null);
+                var formattedName = NpgsqlTokenVisitor.TryFormatColumnName(translitColumn ?? field);
+                var @operator = j == i ? (expression.SortOrder == SortOrder.Ascending ? ">" : "<") : "=";
+                var columnInfo = _metadata.GetColumnInfo<T>(field, useTranslit: false);
+                var typeCode = _metadata.GetTypeCodeForProperty<T>(field);
+
+                if (expression.LastValue is null && columnInfo.IsNullAllowed)
+                {
+                    var coalesce = GetCoalesceMinValue(typeCode);
+                    if (@operator is "=")
+                        builder += $" ({formattedName:raw} IS NULL OR {formattedName:raw} = {coalesce})";
+                    else
+                        builder += $" ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {coalesce})";
+                }
+                else if (formattedValue is null && @operator is "=")
+                {
+                    builder += $" {formattedName:raw} IS NULL";
+                }
+                else if (columnInfo.IsNullAllowed)
+                {
+                    if (formattedValue is null)
+                    {
+                        builder += $" {formattedName:raw} IS NULL";
+                    }
+                    else
+                    {
+                        var coalesce = GetCoalesceMinValue(typeCode);
+                        builder += $" (({formattedName:raw} IS NULL AND {coalesce} {@operator:raw} {formattedValue}) OR ({formattedName:raw} IS NOT NULL AND {formattedName:raw} {@operator:raw} {formattedValue}))";
+                    }
+                }
+                else
+                {
+                    builder += $" {formattedName:raw} {@operator:raw} {formattedValue}";
+                }
+            }
+
+            builder += $")";
+        }
+        builder += $")";
+    }
+
+    // NpgsqlTokenVisitor.BuildSortOrder, with the translit column for a translit field.
+    private void BuildSortOrder<T>(QueryBuilder builder, IReadOnlyList<SortExpression> sortExpressions) where T : class
+    {
+        builder += $"ORDER BY ";
+
+        for (var index = 0; index < sortExpressions.Count; index++)
+        {
+            var expression = sortExpressions[index];
+            if (index > 0) builder += $",";
+
+            var columnInfo = _metadata.GetColumnInfo<T>(expression.Field, useTranslit: false);
+            var typeCode = _metadata.GetTypeCodeForProperty<T>(columnInfo.Name);
+            var formattedName = NpgsqlTokenVisitor.TryFormatColumnName(GetSortTranslitColumn<T>(expression.Field) ?? columnInfo.Name);
+            var direction = expression.SortOrder.GetQueryFromSortOrder().ToUpper();
+
+            if (columnInfo.IsNullAllowed)
+            {
+                var coalesce = GetCoalesceMinValue(typeCode);
+                var nullPosition = expression.SortOrder == SortOrder.Ascending ? "NULLS FIRST" : "NULLS LAST";
+                builder += $"COALESCE({formattedName:raw}, {coalesce}) {direction:raw} {nullPosition:raw}";
+            }
+            else
+            {
+                builder += $"{formattedName:raw} {direction:raw}";
+            }
+        }
+    }
+
+    // NpgsqlTokenVisitor.FormatColumnValue; a translit field's value is transliterated as a filter value is.
+    private dynamic? FormatColumnValue<T>(string field, string? value, bool isTranslit) where T : class
+    {
+        var typeCode = _metadata.GetTypeCodeForProperty<T>(field);
+
+        if (string.IsNullOrEmpty(value))
+        {
+            if (typeCode == TypeCode.String)
+                return value == null ? null : string.Empty;
+            return null;
+        }
+
+        return typeCode switch
+        {
+            TypeCode.String when isTranslit => Transliteration.ToLowerBoldLatin(value),
+            TypeCode.String => _metadata.GetColumnInfo<T>(field, useTranslit: false).SkipCursorTransliteration ? value : Transliteration.CyrlToLatin(value),
+            TypeCode.DateTime => DateTime.TryParse(value, out var date) ? (DateTime?)date : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as DateTime"),
+            TypeCode.Int16 => short.TryParse(value, out var shortValue) ? (short?)shortValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int16"),
+            TypeCode.Int32 => int.TryParse(value, out var intValue) ? (int?)intValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int32"),
+            TypeCode.Int64 => long.TryParse(value, out var longValue) ? (long?)longValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Int64"),
+            TypeCode.Double => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) ? (double?)doubleValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Double"),
+            TypeCode.Boolean => bool.TryParse(value, out var boolValue) ? (bool?)boolValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Boolean"),
+            TypeCode.Char => char.TryParse(value, out var charValue) ? Transliteration.ToBoldLatin(charValue.ToString()) : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Char"),
+            TypeCode.Decimal => decimal.TryParse(value, CultureInfo.InvariantCulture, out var decimalValue) ? (decimal?)decimalValue : throw new Pagin8Exception(Pagin8StatusCode.Pagin8_InvalidComparison.Code, $"Cannot format value {value} as Decimal"),
+            _ => throw new Pagin8Exception(Pagin8StatusCode.Pagin8_UnsupportedComparison.Code, $"Cannot format values for TypeCode {typeCode}")
+        };
+    }
+
+    private static object GetCoalesceMinValue(TypeCode typeCode) => typeCode switch
+    {
+        TypeCode.String or TypeCode.Char => "''",
+        TypeCode.Int16 or TypeCode.UInt16 or TypeCode.Int32 or TypeCode.UInt32 or TypeCode.Int64 or TypeCode.UInt64
+            or TypeCode.Double or TypeCode.Single or TypeCode.Decimal => -1,
+        TypeCode.DateTime => DateTime.MinValue,
+        TypeCode.Boolean => false,
+        _ => throw new Pagin8Exception(Pagin8StatusCode.Pagin8_ColumnNotSortable.Code, $"Sorting nullable columns is not supported for type code: {typeCode}")
+    };
 
     // Only ASCII characters that are not letters: lower() leaves every such character as it is and
     // turns no other character into one of them, so comparing the column with or without lower()

@@ -125,7 +125,8 @@ public static class DuckDbServiceCollectionExtensions
         {
             var visitor = new DuckDbTokenVisitor(
                 sp.GetRequiredService<IPagin8MetadataProvider>(),
-                sp.GetRequiredService<IDateProcessor>());
+                sp.GetRequiredService<IDateProcessor>(),
+                options.SortByTranslit);
             var tokenization = options.ContextValidator is null
                 ? sp.GetRequiredService<ITokenizationService>()
                 : new TokenizationService(

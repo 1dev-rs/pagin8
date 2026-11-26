@@ -937,6 +937,7 @@ public class ArchiveSearch(IDuckDbFilterProvider filterProvider)
   ```
 
   Without `ContextValidator` the DuckDB queries are validated by the `IContextValidator` registered for every provider.
+- `options.SortByTranslit = true` sorts and pages a `[UseTranslit]` text property by its `<Property>_translit` column, the one its filters already use, with the cursor value transliterated as a filter value is (`ToLowerBoldLatin`, so a Cyrillic or Latin cursor both work). DuckDB sorts text binary, so by the plain column "Zemun" comes before "beograd" and "Čačak" after both; by the translit column case and diacritics do not split the order. Off by default; PostgreSQL and SQL Server always sort the plain column, by the database collation.
 - DuckDB has no statement timeout: when `commandTimeout` runs out, the query is interrupted and a `TimeoutException` is thrown.
 - Differences handled by the provider: `@p0` parameter markers are rewritten to `$p0`, and text `in` / `not.in` become `OR`-ed / `AND`-ed comparisons, because DuckDB refuses `ILIKE ANY(ARRAY[...])`.
 - Text filters run as DuckDB's string functions, which select the same rows as `ILIKE` and scan a column about three times faster, and an equality on the plain column can use DuckDB's statistics and bloom filters:

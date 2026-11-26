@@ -19,4 +19,12 @@ public sealed class DuckDbProviderOptions
     /// database needs. Null keeps the shared validator.
     /// </summary>
     public Func<IServiceProvider, IContextValidator>? ContextValidator { get; set; }
+
+    /// <summary>
+    /// Sorts and pages a [UseTranslit] text property by its translit column (the one its filters
+    /// use), the cursor value transliterated as a filter value is. DuckDB sorts text binary, so by the
+    /// plain column "Zemun" comes before "beograd" and "Čačak" after both; by the translit column the
+    /// order ignores case and diacritics. Off by default: the sort uses the plain column, as before.
+    /// </summary>
+    public bool SortByTranslit { get; set; }
 }

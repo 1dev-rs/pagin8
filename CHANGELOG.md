@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.7.1-alpha] - 2026-11-26
+
+### Added
+
+- DuckDB: `DuckDbProviderOptions.SortByTranslit` (off by default). When on, a sort by a `[UseTranslit]` text property orders and pages by its `<Property>_translit` column, the one its filters use, and the cursor value is transliterated as a filter value is (`ToLowerBoldLatin`), so a cursor in Cyrillic or Latin pages the same. DuckDB sorts text binary (uppercase before lowercase, diacritics after `z`); by the translit column case and diacritics do not split the order. A sort without a `[UseTranslit]` property, and every sort when the option is off, is emitted as before. The DuckDB visitor builds this sort itself (`DuckDbTokenVisitor`, new constructor taking `sortByTranslit`); the PostgreSQL and SQL Server visitors are not changed.
+
+### Tests
+
+- `IntegrationTests/DuckDbTranslitSortTests`: the order by the translit column both ways, paging to the end with a Latin and a Cyrillic cursor taken from the shown value, the plain column when the option is off, and a sort without a translit property.
+
 ## [1.7.0-alpha] - 2026-11-26
 
 ### Added
