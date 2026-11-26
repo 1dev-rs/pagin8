@@ -6,26 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [1.6.5-alpha] - 2026-11-26
-
-### Upgrade notes
-
-- **`NULL` in a sorted nullable column is ordered by the column itself.** PostgreSQL and DuckDB emit `col ASC NULLS FIRST` / `col DESC NULLS LAST`, SQL Server `col ASC` / `col DESC`, instead of `COALESCE(col, <min>)` / `ISNULL(col, <min>)`. `NULL` stays the smallest value, as before; what changes is that it now sorts strictly before `''`, `-1` and `DateTime.MinValue`, which it used to tie with (the tie was broken by the key). An index on the column (`(col NULLS FIRST, key)` on PostgreSQL) now serves the order; an expression index on `COALESCE(col, ...)` no longer does.
-- **`$null` is a `NULL` cursor value for text too.** It used to become `''`, so a text cursor on a `NULL` row compared as an empty string.
-
-### Fixed
-
-- Cursor paging over a nullable column repeated or skipped rows when a page ended on a `NULL`: the condition for the strict part of the cursor was `col IS NULL`, which brought back every `NULL` row and none of the values after them. Rows after a `NULL` cursor are now every non-`NULL` row ascending and none descending, and rows after a value descending include the `NULL` rows. Regression from the change for review item #12 (first released in v1.3.20-alpha) (`GITHUB_ISSUES.md`), which replaced the consistent `COALESCE(col, min) > COALESCE(value, min)` with `IS NULL` for a `NULL` cursor. Applies to PostgreSQL, SQL Server, DuckDB and LINQ.
-- Text columns: the `COALESCE` stand-in for `NULL` was sent as the two-character string `''`, not as an empty string.
-- SQL Server: a sort naming the key and `$key` (`sort(name.asc,id.asc,$key.45)`) failed with "A column has been specified more than once in the order by list". A column already in the order is no longer repeated.
-- LINQ mode: `paging=(...)` was ignored: the sort, cursor and limit were built and then dropped. Cursor paging on `bool` columns threw `Pagin8_UnsupportedComparison`.
-- Sorting a nullable column of a type without a stand-in value (e.g. `Guid?`) threw `Pagin8_ColumnNotSortable`.
-
-### Tests
-
-- `IntegrationTests/NullKeyset`: every sortable nullable type, both directions, page sizes 1, 3 and 7, with and without filters, and sorts over two nullable columns, scrolled to the end on PostgreSQL, SQL Server, DuckDB and LINQ. Each scroll must return as many rows as `COUNT(*)` of its filter, none twice, in order. On PostgreSQL, `EXPLAIN` checks that an index on `(col NULLS FIRST, id)` serves the order without a sort.
-- The PostgreSQL and SQL Server integration tests run on a server of your own when `PAGIN8_TEST_POSTGRES_CONNECTION` / `PAGIN8_TEST_SQLSERVER_CONNECTION` hold an admin connection string (a fresh database is created and dropped), and in Testcontainers otherwise.
-
 ## [1.6.4-alpha] - 2026-11-25
 
 ### Added

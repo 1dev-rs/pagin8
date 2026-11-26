@@ -121,16 +121,10 @@ public class SortTokenizationStrategy : ITokenizationStrategy
         return sortExpressions;
     }
 
-    // $null is a NULL cursor value, which a nullable column compares as NULL; it used to become "",
-    // so a NULL text cursor was taken for an empty string. SortToken writes null back as $null.
-    private static string? TryProcessPlaceholders(string? lastValue)
+    private static string TryProcessPlaceholders(string? lastValue)
     {
-        if (lastValue != null && lastValue.Equals(QueryConstants.NullPlaceholder, StringComparison.InvariantCultureIgnoreCase))
-        {
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(lastValue))
+        if (string.IsNullOrWhiteSpace(lastValue) ||
+            lastValue.Equals(QueryConstants.NullPlaceholder, StringComparison.InvariantCultureIgnoreCase))
         {
             return string.Empty;
         }

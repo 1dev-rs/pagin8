@@ -23,11 +23,7 @@ public class PostgreSqlContainerFixture : IAsyncLifetime
     private PostgreSqlContainer? _container;
     private readonly TestConfiguration _config;
 
-    private string? _adminConnectionString;
-    private string? _externalConnectionString;
-    private readonly string _database = $"pagin8_it_{Guid.NewGuid():N}";
-
-    public string ConnectionString => _externalConnectionString ?? _container?.GetConnectionString() ?? string.Empty;
+    public string ConnectionString => _container?.GetConnectionString() ?? string.Empty;
     public NpgsqlConnection? Connection { get; private set; }
     public int DatasetSize => _config.TestSettings.DatasetSize;
     public int Seed => _config.TestSettings.Seed;
@@ -43,32 +39,7 @@ public class PostgreSqlContainerFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var settings = _config.TestSettings.Databases.PostgreSql;
-
-        if (!await UseServerFromEnvironmentAsync() && !await StartContainerAsync(settings))
-            return;
-
-        // Connect to the database
-        await SeedAsync(settings);
-    }
-
-    // PAGIN8_TEST_POSTGRES_CONNECTION (an admin connection string) runs the tests on a server of
-    // your own instead of Docker, in a fresh database that is dropped at the end.
-    private async Task<bool> UseServerFromEnvironmentAsync()
-    {
-        _adminConnectionString = Environment.GetEnvironmentVariable("PAGIN8_TEST_POSTGRES_CONNECTION");
-        if (string.IsNullOrWhiteSpace(_adminConnectionString))
-            return false;
-
-        await using (var admin = new NpgsqlConnection(_adminConnectionString))
-            await admin.ExecuteAsync($"CREATE DATABASE {_database}");
-
-        _externalConnectionString = new NpgsqlConnectionStringBuilder(_adminConnectionString) { Database = _database, Pooling = false }.ConnectionString;
-        Console.WriteLine($"PostgreSQL from PAGIN8_TEST_POSTGRES_CONNECTION, database {_database}");
-        return true;
-    }
-
-    private async Task<bool> StartContainerAsync(PostgreSqlSettings settings)
-    {
+        
         // Create and start PostgreSQL container
         _container = new PostgreSqlBuilder()
             .WithImage(settings.Image)
@@ -92,14 +63,11 @@ public class PostgreSqlContainerFixture : IAsyncLifetime
                 $"  Image setting: test-config.json \u2192 testConfiguration.databases.postgreSql.image\n" +
                 $"  Inner error  : {ex.Message}";
             Console.WriteLine($"[ERROR] {ContainerStartFailure}");
-            return false;
+            return;
         }
         Console.WriteLine($"PostgreSQL container started: {_container.GetConnectionString()}");
-        return true;
-    }
 
-    private async Task SeedAsync(PostgreSqlSettings settings)
-    {
+        // Connect to the database
         Connection = new NpgsqlConnection(ConnectionString);
         await Connection.OpenAsync();
 
@@ -134,12 +102,6 @@ public class PostgreSqlContainerFixture : IAsyncLifetime
         if (Connection != null)
         {
             await Connection.DisposeAsync();
-        }
-
-        if (_externalConnectionString != null)
-        {
-            await using var admin = new NpgsqlConnection(_adminConnectionString);
-            await admin.ExecuteAsync($"DROP DATABASE IF EXISTS {_database} WITH (FORCE)");
         }
 
         if (_container != null)

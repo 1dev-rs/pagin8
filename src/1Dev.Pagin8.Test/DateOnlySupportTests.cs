@@ -164,11 +164,12 @@ public class DateOnlyPostgreSqlTests
     }
 
     [Fact]
-    public void Sort_OnNullableDateOnly_PutsNullsFirst()
+    public void Sort_OnNullableDateOnly_CoalescesWithMinDate()
     {
         var result = _sut.BuildSqlQuery<TestDateOnlyEntity>(DateOnlyTestHelper.Build("paging=(sort(validUntil.asc))"));
 
-        result.Builder.AsSql().Sql.Should().Contain("ORDER BY validUntil ASC NULLS FIRST");
+        result.Builder.AsSql().Sql.Should().Contain("COALESCE(validUntil, @p0) ASC NULLS FIRST");
+        result.Builder.Build().SqlParameters[0].Argument.Should().Be(DateTime.MinValue);
     }
 
     [Fact]
@@ -183,14 +184,14 @@ public class DateOnlyPostgreSqlTests
     }
 
     [Fact]
-    public void KeysetPaging_OnNullableDateOnly_ComparesTheColumn()
+    public void KeysetPaging_OnNullableDateOnly_UsesCoalesce()
     {
         var result = _sut.BuildSqlQuery<TestDateOnlyEntity>(
             DateOnlyTestHelper.Build("paging=(sort(validUntil.asc.2024-01-15,$key.5),limit.10)"));
 
         var sql = result.Builder.AsSql().Sql;
-        sql.Should().Contain("(( validUntil > @p0)");
-        sql.Should().NotContain("COALESCE");
+        sql.Should().Contain("validUntil IS NULL AND");
+        sql.Should().Contain("validUntil IS NOT NULL AND validUntil >");
     }
 
     [Fact]
@@ -288,11 +289,13 @@ public class DateOnlySqlServerTests
     }
 
     [Fact]
-    public void Sort_OnNullableDateOnly_LeavesNullsFirstToSqlServer()
+    public void Sort_OnNullableDateOnly_UsesIsNull()
     {
         var result = _sut.BuildSqlQuery<TestDateOnlyEntity>(DateOnlyTestHelper.Build("paging=(sort(validUntil.asc))"));
 
-        result.Builder.AsSql().Sql.Should().Contain("ORDER BY validUntil ASC").And.NotContain("ISNULL");
+        result.Builder.AsSql().Sql.Should().Contain("ISNULL(validUntil, @p0) ASC");
+        // SQL "datetime" parameters cannot hold DateTime.MinValue
+        result.Builder.Build().SqlParameters[0].Argument.Should().Be(new DateTime(1753, 1, 1));
     }
 
     [Fact]

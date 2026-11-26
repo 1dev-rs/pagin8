@@ -3,7 +3,7 @@
 ## ?? Quick Start
 
 ### Prerequisites
-- **Docker Desktop** running, or servers of your own: set `PAGIN8_TEST_POSTGRES_CONNECTION` and/or `PAGIN8_TEST_SQLSERVER_CONNECTION` to an admin connection string (e.g. `Server=localhost;Integrated Security=true;TrustServerCertificate=true;Database=master`). The tests then create a fresh database there and drop it at the end, instead of starting a container. DuckDB and LINQ need neither.
+- **Docker Desktop** running
 - **.NET 9 SDK** installed
 
 ### Run Tests

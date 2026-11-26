@@ -23,11 +23,7 @@ public class SqlServerContainerFixture : IAsyncLifetime
     private MsSqlContainer? _container;
     private readonly TestConfiguration _config;
 
-    private string? _adminConnectionString;
-    private string? _externalConnectionString;
-    private readonly string _database = $"pagin8_it_{Guid.NewGuid():N}";
-
-    public string ConnectionString => _externalConnectionString ?? _container?.GetConnectionString() ?? string.Empty;
+    public string ConnectionString => _container?.GetConnectionString() ?? string.Empty;
     public SqlConnection? Connection { get; private set; }
     public int DatasetSize => _config.TestSettings.DatasetSize;
     public int Seed => _config.TestSettings.Seed;
@@ -44,31 +40,7 @@ public class SqlServerContainerFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var settings = _config.TestSettings.Databases.SqlServer;
-
-        if (!await UseServerFromEnvironmentAsync() && !await StartContainerAsync(settings))
-            return;
-
-        await SeedAsync(settings);
-    }
-
-    // PAGIN8_TEST_SQLSERVER_CONNECTION runs the tests on a server of your own instead of Docker,
-    // in a fresh database that is dropped at the end.
-    private async Task<bool> UseServerFromEnvironmentAsync()
-    {
-        _adminConnectionString = Environment.GetEnvironmentVariable("PAGIN8_TEST_SQLSERVER_CONNECTION");
-        if (string.IsNullOrWhiteSpace(_adminConnectionString))
-            return false;
-
-        await using (var admin = new SqlConnection(_adminConnectionString))
-            await admin.ExecuteAsync($"CREATE DATABASE {_database}");
-
-        _externalConnectionString = new SqlConnectionStringBuilder(_adminConnectionString) { InitialCatalog = _database, Pooling = false }.ConnectionString;
-        Console.WriteLine($"SQL Server from PAGIN8_TEST_SQLSERVER_CONNECTION, database {_database}");
-        return true;
-    }
-
-    private async Task<bool> StartContainerAsync(SqlServerSettings settings)
-    {
+        
         // Create and start SQL Server container
         _container = new MsSqlBuilder()
             .WithImage(settings.Image)
@@ -90,14 +62,10 @@ public class SqlServerContainerFixture : IAsyncLifetime
                 $"  Image setting: test-config.json \u2192 testConfiguration.databases.sqlServer.image\n" +
                 $"  Inner error  : {ex.Message}";
             Console.WriteLine($"[ERROR] {ContainerStartFailure}");
-            return false;
+            return;
         }
         Console.WriteLine($"SQL Server container started: {_container.GetConnectionString()}");
-        return true;
-    }
 
-    private async Task SeedAsync(SqlServerSettings settings)
-    {
         // Connect to the database
         Connection = new SqlConnection(ConnectionString);
         await Connection.OpenAsync();
@@ -133,12 +101,6 @@ public class SqlServerContainerFixture : IAsyncLifetime
         if (Connection != null)
         {
             await Connection.DisposeAsync();
-        }
-
-        if (_externalConnectionString != null)
-        {
-            await using var admin = new SqlConnection(_adminConnectionString);
-            await admin.ExecuteAsync($"ALTER DATABASE {_database} SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE {_database};");
         }
 
         if (_container != null)

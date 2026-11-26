@@ -276,12 +276,11 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
     }
 
 
-    // Each step builds on the previous one; the sort, cursor and limit used to be dropped here.
     public IQueryable<T> Visit(PagingToken token, IQueryable<T> queryable)
     {
-        if (token.Sort != null) queryable = token.Sort.Accept(this, queryable);
-        if (token.Limit != null) queryable = token.Limit.Accept(this, queryable);
-        if (token.Count != null) queryable = token.Count.Accept(this, queryable);
+        token.Sort?.Accept(this, queryable);
+        token.Limit?.Accept(this, queryable);
+        token.Count?.Accept(this, queryable);
 
         return queryable;
     }
@@ -541,7 +540,7 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
                         ? ComparisonOperator.GreaterThan
                         : ComparisonOperator.LessThan;
                 }
-                return KeysetComparison(currentSortExpression, op);
+                return GenerateComparisonExpression(new ComparisonToken(currentSortExpression.Field, op, currentSortExpression.LastValue, 2));
             });
 
             return andConditions.Aggregate(Expression.AndAlso);
@@ -551,51 +550,6 @@ public class LinqTokenVisitor<T>(IPagin8MetadataProvider metadata, IDateProcesso
 
         var finalLambda = Expression.Lambda<Func<T, bool>>(combinedExpression, _parameter);
         return queryable.Where(finalLambda);
-    }
-
-    // NULL is the smallest value, as LINQ's own ordering puts it, and as the SQL visitors do
-    // (NpgsqlTokenVisitor.KeysetComparison): rows after a NULL cursor are every non-NULL row
-    // ascending and none descending; rows after a value descending include the NULLs.
-    private Expression KeysetComparison(SortExpression sortExpression, ComparisonOperator op)
-    {
-        var member = GetPropertyExpression(sortExpression.Field);
-        var canBeNull = !member.Type.IsValueType || member.Type.IsNullable();
-
-        if (!canBeNull)
-            return ValueComparison(member, sortExpression, op);
-
-        var isNull = Expression.Equal(member, Expression.Constant(null, member.Type));
-
-        if (sortExpression.LastValue is null || (sortExpression.LastValue == string.Empty && member.Type != typeof(string)))
-        {
-            return op switch
-            {
-                ComparisonOperator.Equals => isNull,
-                ComparisonOperator.GreaterThan => Expression.Not(isNull),
-                _ => Expression.Constant(false)
-            };
-        }
-
-        var notNull = Expression.AndAlso(Expression.Not(isNull), ValueComparison(member, sortExpression, op));
-
-        return op == ComparisonOperator.LessThan ? Expression.OrElse(notNull, isNull) : notNull;
-    }
-
-    // A bool cursor is ordered false before true; the filter comparison refuses gt/lt on bool.
-    private Expression ValueComparison(MemberExpression member, SortExpression sortExpression, ComparisonOperator op)
-    {
-        if ((Nullable.GetUnderlyingType(member.Type) ?? member.Type) != typeof(bool))
-            return GenerateComparisonExpression(new ComparisonToken(sortExpression.Field, op, sortExpression.LastValue ?? string.Empty, 2));
-
-        var value = bool.Parse(sortExpression.LastValue!);
-        Expression Is(bool b) => Expression.Equal(member, Expression.Constant(b, member.Type));
-
-        return op switch
-        {
-            ComparisonOperator.Equals => Is(value),
-            ComparisonOperator.GreaterThan => value ? Expression.Constant(false) : Is(true),
-            _ => value ? Is(false) : Expression.Constant(false)
-        };
     }
 
     private void MapPlaceholderToKey(IReadOnlyCollection<SortExpression> sortExpressions)

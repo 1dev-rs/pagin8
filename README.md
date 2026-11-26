@@ -380,20 +380,7 @@ To initialize the every next page by same criteria, besides columns with directi
 
 -   `count.false`:  Excluding the total count of matching records from the response.
 
-There are a few more placeholders that you can use while setting the last value, those are `$empty` for empty strings, and `$null` for `null` values. Send `$null` when the last row's value is `null`: a field whose last value is left out is dropped from the sort of that page, so the page is ordered by the remaining fields only.
-
-#### Sorting nullable columns
-
-A column allows `NULL` when its property is a nullable value type (`int?`, `DateTime?`, ...) or carries `[NullsAllowed]` (needed for `string` and other reference types, since pagin8 cannot see nullable reference annotations). `NULL` is the smallest value of such a column on every provider: first in ascending order, last in descending order, and before `''`, `0` or any negative number. The cursor compares the column itself, never an expression over it, so an index serves both the order and the next page:
-
-```sql
--- PostgreSQL: one index serves the column ascending and descending
-CREATE INDEX ix_orders_shipped ON orders (shipped NULLS FIRST, id);
--- SQL Server orders NULL first by itself
-CREATE INDEX ix_orders_shipped ON orders (shipped, id);
-```
-
-A column that may hold `NULL` but is not marked as nullable is ordered by the database's default (PostgreSQL puts `NULL` last ascending), and its `NULL` rows are skipped by the cursor. Mark it.
+There are a few more placeholders that you can use while setting the last value, those are `$empty` for empty strings, and `$null` for `null` values.
 
 String cursors are converted from Cyrillic to Latin by default in PostgreSQL and SQL Server.
 Add `[SkipCursorTransliteration]` from `_1Dev.Pagin8.Internal.Attributes` to a query DTO property when the client sends its original stored sort value.
@@ -1023,7 +1010,7 @@ public class ReportRepository : FilteredRepositoryBase<ReportDto>
 | DI method | `AddPagin8Backend()` | `AddPagin8BackendSqlServer()` |
 | `incl`/`excl` on a collection column | Native arrays (`@>`, `&&`) | Comma-separated text (`STRING_SPLIT`); values are compared as invariant text (`yyyy-MM-dd` for dates, `true`/`false` for booleans) |
 | Dates in JSON fields | Cast with `::timestamp` | Converted with `TRY_CONVERT(DATETIME2, ...)` |
-| `NULL` in a sorted nullable column | `NULLS FIRST` ascending, `NULLS LAST` descending | The engine's own order, which is the same |
+| `NULL` fallback when sorting nullable dates | `DateTime.MinValue` | `1753-01-01` (the minimum of SQL `datetime`) |
 
 ---
 
